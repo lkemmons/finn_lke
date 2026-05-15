@@ -4,13 +4,17 @@ import six
 import numpy as np
 from pyproj import Proj
 from bs4 import BeautifulSoup
-import ogr
+try:
+    import ogr
+except ImportError:
+    from osgeo import ogr
 import requests
 from urllib.parse import urlparse
 import modis_tile
 import psycopg2
 from importlib import reload
 from pathlib import Path
+import warnings
 
 
 import af_import
@@ -49,6 +53,8 @@ def download_one(url, droot=None, ddir=None):
         cmd.extend(['--force-directories', '-P', droot])
     cmd.extend(['--user', os.environ['EARTHDATAUSER']])
     cmd.extend(['--password', os.environ['EARTHDATAPW']])
+    #cmd.extend(['--no-verbose'])
+    cmd.extend(['--quiet'])
     cmd.append(url)
     subprocess.run(cmd, check=True)
 
@@ -107,24 +113,39 @@ def purge_corrupted(ddir, url=None):
 
 def check_downloads(fname, get_cksum=None):
     """test checksum of a file against .xml file"""
+
     if get_cksum is None:
         def earthdata_cksum(fname):
             # assume that the data file comes with xml file
             xname = fname + '.xml'
+            warnings.filterwarnings("ignore", category=UserWarning, module='bs4',
+                    message='.*parsing an XML document using an HTML parser.*')
             soup = BeautifulSoup(open(xname, 'r'), 'html.parser')
             cksum, filsz = [soup.findAll(_)[0].contents[0] for _ in ('checksum', 'filesize')]
             return cksum, filsz
         get_cksum = earthdata_cksum
+
+    typ = 'CRC'  # assume it is cksum
     cksum0 = ['0','0']
     try:
         cksum0 = get_cksum(fname)
+        typ = cksum0[2]
+        cksum0 = cksum0[:2]
     except:
         pass
 
-    p = subprocess.Popen(['cksum', fname], stdout=subprocess.PIPE)
-    cksum = p.stdout.read()
-    p.communicate()
-    cksum = [_.decode() for _ in cksum.split()[:2]]
+    if typ == 'MD5':
+        p = subprocess.run(['md5sum', fname], stdout=subprocess.PIPE)
+        md5 = [_.decode() for _ in p.stdout.split()]
+        p = subprocess.run(['stat','-c', '%s' , fname], stdout=subprocess.PIPE)
+        siz = p.stdout.split()[0].decode()
+        cksum = [md5[0] , siz]
+    else:
+        cmd = 'cksum'
+        p = subprocess.Popen(['cksum', fname], stdout=subprocess.PIPE)
+        cksum = p.stdout.read()
+        p.communicate()
+        cksum = [_.decode() for _ in cksum.split()[:2]]
 
     if all((p)==(q) for (p,q) in zip(cksum0, cksum)):
         return True

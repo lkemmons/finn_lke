@@ -1,17 +1,17 @@
-FROM kartoza/postgis:11.0-2.5
+# 2023-04-08 updated from postgis 2.5
+FROM kartoza/postgis:14-3.3
 
-ENV PATH /opt/conda/bin:$PATH
+ENV PATH=/opt/conda/bin:$PATH
 
 RUN rm -fr /var/lib/apt/lists/* && apt-get update --fix-missing && \
     apt-get install -y wget bzip2 ca-certificates \
     libglib2.0-0 libxext6 libsm6 libxrender1 postgis git unzip
 
-# 2020-06-27 somehow plpython3 seems to work out of box
-#RUN apt-get install -y curl grep sed dpkg unzip python3-pip sudo postgresql-plpython3-11 
 RUN apt-get install -y curl grep sed dpkg unzip python3-pip sudo
 
-RUN TINI_VERSION=`curl https://github.com/krallin/tini/releases/latest | grep -o "/v.*\"" | sed 's:^..\(.*\).$:\1:'` && \
-    curl -L "https://github.com/krallin/tini/releases/download/v${TINI_VERSION}/tini_${TINI_VERSION}.deb" > tini.deb && \
+# 2023-04-08 TINI version fixed
+ENV TINI_VERSION=0.19.0
+RUN curl -L "https://github.com/krallin/tini/releases/download/v${TINI_VERSION}/tini_${TINI_VERSION}.deb" > tini.deb && \
     dpkg -i tini.deb && \
     rm tini.deb && \
     apt-get clean
@@ -29,18 +29,22 @@ RUN conda info && \
   conda activate
 
 RUN conda update conda
-RUN conda install -c conda-forge \
-	gdal=2.4 \
-  "libgfortran-ng=7.2" \
-	python=3.7 \
-	jupyterlab=2.2.9 \
-	ncurses=6.2 \
-	pyproj=1.9.6 \
-	beautifulsoup4=4.9.3 \
-	shapely=1.6.4 \
-	psycopg2=2.8.4 \
-	matplotlib=2.2.5 \
-	basemap=1.2.1
+
+# 2023-04-08 version of packages that works
+# 2023-04-23 minor version specifications relaxed
+# 2023-07-12 notebook separatedly needed for jupyterlab
+# 2023-07-12 switched from basemap to catopy
+RUN conda install -c conda-forge -y \
+	gdal=3.6 \
+	python=3.11 \
+	jupyterlab=4.0 \
+	notebook=6.5 \
+	pyproj=3.6 \
+	beautifulsoup4=4.12 \
+	shapely=2.0 \
+	psycopg2=2.9 \
+	matplotlib=3.7 \
+	cartopy=0.21
 
 # verify that gdal is importable
 RUN /opt/conda/bin/python -c "from osgeo import gdal"
@@ -49,9 +53,8 @@ RUN /opt/conda/bin/python -c "from osgeo import gdal"
 # apt has older version of networkx, cannot be used.
 # so i have to use pip3
 # also i SOULD specify version of library so that results are reproducible...
-#RUN /usr/bin/pip3 install numpy scipy networkx
-#RUN /usr/bin/pip3 install numpy==1.18.0 scipy networkx==2.4 # versions in finn2.2-preproc1.2a
-RUN /usr/bin/pip3 install numpy==1.19.4 scipy==1.5.4 networkx==2.5 # versions installed as of 2020-11-07
+#RUN /usr/bin/pip3 install numpy scipy networkx # no specfic version, 2023-04-08
+RUN /usr/bin/pip3 install numpy=1.26 scipy==1.13 networkx==3.2 # froze version 2025-01-28 (numpy 2.0 was causing trouble with NDArray.ptp() being removed
 
 EXPOSE 8888
 
@@ -80,4 +83,6 @@ ENV POSTGRES_USER=finn \
 ### 
 ### RUN echo "psql -d finn -c 'create extension postgis_raster;'" >> /docker-entrypoint.sh
 
-ENTRYPOINT /docker-entrypoint.sh
+# 2023-04-08 not needed anymore?
+# the docker-entrypoint.sh is now in /script , and i dont need to call it.  seems to be executed without having following line
+# ENTRYPOINT /docker-entrypoint.sh
