@@ -1,0 +1,28 @@
+#!/bin/csh
+
+#set OP_SYS=`uname -s`
+#if( ! $?FC ) then
+#  if( $OP_SYS == "Linux" ) then
+#    setenv FC pgf95
+#  else
+#    setenv FC xlf95
+#  endif
+#endif
+#setenv FC pgf95
+setenv FC gfortran
+
+make clean >& /dev/null
+
+#if( ! $?FINN_OMP ) then
+  make || echo "Failed to build FINN fire_emis" && exit -1
+#else
+#  make -f Makefile.omp || echo "Failed to build FINN fire_emis" && exit -1
+#endif
+
+echo " "
+
+make cleanup >& /dev/null
+
+echo "+++++++++++++++++++++++"
+echo "FINN fire_emis build Ok"
+echo "+++++++++++++++++++++++"
