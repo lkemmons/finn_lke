@@ -1,0 +1,34 @@
+[project]
+name = "finn_py"
+version = "0.1.0"
+description = "Pure-Python rewrite of the FINN preprocessor (no PostgreSQL)"
+requires-python = ">=3.10"
+dependencies = [
+    "numpy>=1.24",
+    "pandas>=2.0",
+    "geopandas>=0.14",
+    "shapely>=2.0",            # 2.x: STRtree, vectorised ops
+    "scipy>=1.10",             # Voronoi, cKDTree
+    "networkx>=3.0",
+    "rasterio>=1.3",           # GeoTIFF I/O, mask/zonal stats, warp (HDF4 driver NOT needed)
+    "pyhdf>=0.11",             # MODIS HDF4-EOS reading (used because GDAL often lacks HDF4)
+    "pyproj>=3.6",             # spheroidal area, sinusoidal CRS
+    "pyarrow>=14",             # GeoParquet
+]
+
+[project.optional-dependencies]
+parallel = ["dask[distributed]>=2024.1"]
+
+# System libs:
+#   pyhdf needs the HDF4 C libraries (libdf, libmfhdf, libjpeg).
+#   On Debian/Ubuntu:    apt install libhdf4-dev libjpeg-dev
+#   On macOS (brew):     brew install hdf4
+#   On conda:            conda install -c conda-forge hdf4 pyhdf
+
+[project.scripts]
+finn-nrt = "finn_py.cli:nrt_main"
+finn-raster = "finn_py.cli:raster_main"
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"

@@ -1,0 +1,159 @@
+#!/bin/bash
+#PBS -N finnpy_nrt
+#PBS -A P19010000
+#PBS -l select=1:ncpus=4:mpiprocs=4:mem=32G
+#PBS -l walltime=1:00:00
+#PBS -q casper
+#PBS -j oe
+
+# /glade/work/emmons/FINN_python/FINNv2.9nrt/run_finnpy_nrt_daily.pbs
+# called by casper cronjob script: cron_run_finnpy_nrt.sh
+
+module load conda
+conda activate npl-2026a
+
+set -euo pipefail
+
+export TMPDIR=/glade/derecho/scratch/emmons/tmp_finn
+mkdir -p $TMPDIR
+
+# -- EDIT --
+# Paths for input:
+FINN_PY_ROOT=/glade/work/emmons/FINN_python/FINNv2.9nrt/finn_py
+AF_ROOT=/glade/derecho/scratch/emmons/finnpy_inputs/ActiveFires
+RASTER_DIR=/glade/derecho/scratch/emmons/finnpy_inputs/finn_rasters_global
+# Paths for output:
+WORK_DIR=/glade/derecho/scratch/emmons/finn2.9nrt_work
+OUT_DIR=/glade/derecho/scratch/emmons/finn2.9nrt_output
+LOG_DIR=${OUT_DIR}/logs
+
+# vegetation map year
+YEAR_RST=2024
+
+# include tropical fire points from previous day
+TROPICAL_CARRYOVER="--tropical-carryover"
+
+# run for yesterday and use 2 days ago to fill in Tropics
+offset1=-1
+offset2=-2
+
+date_to_process=`date +\%Y-\%m-\%d -d "+$offset1 days"`
+YYYYMMDD=`date +\%Y\%m\%d -d "+$offset1 days"`
+YYYYJJJ=$(date -d $date_to_process +'%Y%j')
+date_prev=`date +\%Y-\%m-\%d -d "+$offset2 days"`
+YYYYJJJm1=$(date -d $date_prev +'%Y%j')
+
+# save all output in a log file
+LOGFILE=${LOG_DIR}/finn_${YYYYJJJ}.log
+exec > ${LOGFILE} 2>&1
+
+echo "Processing data: $date_to_process $YYYYMMDD"
+echo "day of year: $YYYYJJJ"
+echo "previous day: $YYYYJJJm1"
+echo "Raster year: $YEAR_RST"
+
+
+# download fire counts for past 2 days
+#-------------------------------------------
+# Earthdata token expires 08/04/2026
+EARTHDATATOKEN=eyJ0eXAiOiJKV1QiLCJvcmlnaW4iOiJFYXJ0aGRhdGEgTG9naW4iLCJzaWciOiJlZGxqd3RwdWJrZXlfb3BzIiwiYWxnIjoiUlMyNTYifQ.eyJ0eXBlIjoiVXNlciIsInVpZCI6ImxrZW1tb25zIiwiZXhwIjoxNzg1ODY3NDk2LCJpYXQiOjE3ODA2ODM0OTYsImlzcyI6Imh0dHBzOi8vdXJzLmVhcnRoZGF0YS5uYXNhLmdvdiIsImlkZW50aXR5X3Byb3ZpZGVyIjoiZWRsX29wcyIsImFjciI6ImVkbCIsImFzc3VyYW5jZV9sZXZlbCI6M30.pTzsmPPLrUpNOuYZZXHiDtGWgnzELSf9l0G75GBJqJUd7KN3n41_bb0PfM4caF7Itv2Yqk850JHciesdn2Ub7mRdhh5ZH-AKGyVPbT2Nad-SiinNHrsXq1PTu0NpMdzRkZgsX2zFhbQ0hadFQhTXBROoPD7BrDt5j45gdHGcbbo3L46V9EQAq37rsCQS99YfUZ5OGsqFQ9-rtOQLprZMUZ74hEEhvdmScrm_i5B31sI3VAfmm8mcKnQC9jjaaHzwJKEMYmrG3dd-9igEmn8b-q6js9nzHfjcE0JRo57VLD9bikyayeYNAwE86zG3iFWGFi0rz_3Rv-3JflBMfOrT9w
+
+#MODIS
+/usr/bin/wget -nv -e robots=off -m -np -R .html,.tmp -nH --cut-dirs=7 --no-check-certificate "https://nrt4.modaps.eosdis.nasa.gov/api/v2/content/archives/FIRMS/modis-c6.1/Global/MODIS_C6_1_Global_MCD14DL_NRT_${YYYYJJJ}.txt" --header "Authorization: Bearer ${EARTHDATATOKEN}" -P $AF_ROOT -a ${LOGFILE}
+
+/usr/bin/wget -nv -e robots=off -m -np -R .html,.tmp -nH --cut-dirs=7 --no-check-certificate "https://nrt4.modaps.eosdis.nasa.gov/api/v2/content/archives/FIRMS/modis-c6.1/Global/MODIS_C6_1_Global_MCD14DL_NRT_${YYYYJJJm1}.txt" --header "Authorization: Bearer ${EARTHDATATOKEN}" -P $AF_ROOT -a ${LOGFILE}
+
+#VIIRS-NPP/SUOMI
+/usr/bin/wget -nv -e robots=off -m -np -R .html,.tmp -nH --cut-dirs=7 --no-check-certificate "https://nrt3.modaps.eosdis.nasa.gov/api/v2/content/archives/FIRMS/suomi-npp-viirs-c2/Global/SUOMI_VIIRS_C2_Global_VNP14IMGTDL_NRT_${YYYYJJJ}.txt" --header "Authorization: Bearer ${EARTHDATATOKEN}" -P $AF_ROOT -a ${LOGFILE}
+
+/usr/bin/wget -nv -e robots=off -m -np -R .html,.tmp -nH --cut-dirs=7 --no-check-certificate "https://nrt3.modaps.eosdis.nasa.gov/api/v2/content/archives/FIRMS/suomi-npp-viirs-c2/Global/SUOMI_VIIRS_C2_Global_VNP14IMGTDL_NRT_${YYYYJJJm1}.txt" --header "Authorization: Bearer ${EARTHDATATOKEN}" -P $AF_ROOT -a ${LOGFILE}
+
+
+cd $FINN_PY_ROOT
+
+echo "=== date $YYYYJJJ  ==="
+echo "started FINN_PY: $(date -Iseconds)"
+echo
+
+python scripts/run_daily_nrt.py \
+       --date         $YYYYJJJ \
+       --tag-prefix   "v2.9nrt" \
+       --af-root      $AF_ROOT \
+       --raster-dir   $RASTER_DIR \
+       --year-rst     $YEAR_RST \
+       $TROPICAL_CARRYOVER \
+       --work-dir     $WORK_DIR \
+       --out-dir      $OUT_DIR
+
+echo
+echo "=== finished preprocessor: $(date -Iseconds) ==="
+
+echo "=== calculate emissions $(date -Iseconds) ==="
+
+cd /glade/work/emmons/FINN_python/FINNv2.9nrt/emis_calc
+idl -e finn2_9_1_calc_emis_nrt_daily -args $YYYYJJJ $YEAR_RST
+
+
+echo "=== zip emis txt and copy to modeling1 $(date -Iseconds) ==="
+
+cd /glade/derecho/scratch/emmons/finn2.9.1nrt_emis_txt_zipped
+
+cp -f /glade/derecho/scratch/emmons/finn2.9.1nrt_emis_txt/FINNv2.9*_${YYYYMMDD}.txt /glade/derecho/scratch/emmons/finn2.9.1nrt_emis_txt_zipped/
+/usr/bin/gzip -f FINNv2.9*_${YYYYMMDD}.txt
+
+rsync -avz /glade/derecho/scratch/emmons/finn2.9.1nrt_emis_txt_zipped/FINNv2.9.1_NRTmodvrs_*.gz modeling1.acom.ucar.edu:/data14a/FINN/web/finn_emis_txt/
+
+
+echo "=== grid text files to 0.1deg $(date -Iseconds) ==="
+
+pathgrid="/glade/campaign/acom/acom-weather/emmons/emissions_finn/finn2.9nrt/emis_grid_v2.9.1/"
+pathgridday="$pathgrid$YYYYMMDD"
+mkdir -p $pathgridday
+firelab="NRTmodvrs"
+file_inp="/glade/work/emmons/FINN_python/FINNv2.9nrt/finn_nrt_grid_01.inp"
+
+cat <<EOF > "$file_inp"
+&control
+fire_directory    = '/glade/derecho/scratch/emmons/finn2.9.1nrt_emis_txt/',
+fire_filename(1)  = 'FINNv2.9.1_NRTmodvrs_MOZART_${YYYYMMDD}.txt', 
+start_date     = '$date_to_process', 
+end_date       = '$date_to_process',
+output_timing  = 'daily', 
+Model          = 'CAMFV', 
+resol          = '0.1x0.1',
+EmisType       = 'bb_surface_daily',
+defaultUnits   = 'molecules/cm^2/s',
+FinnVers       = '2.9.1_${firelab}',
+glb2fire_map = 'CO -> CO', 'CO2 -> CO2', 'CH4 -> CH4', 'NO -> NO', 'NO2 -> NO2', 'SO2 -> SO2', 'NH3 -> NH3',
+   'BIGALK -> BIGALK', 'BIGENE -> BIGENE', 'BZALD -> BZALD', 'C2H2 -> C2H2', 'C2H4 -> C2H4', 'C2H6 -> C2H6',
+   'C3H6 -> C3H6', 'C3H8 -> C3H8', 'CH2O -> CH2O', 'CH3CHO -> CH3CHO', 'CH3COCH3 -> CH3COCH3',
+   'CH3COCHO -> MGLY', 'CH3COOH -> CH3COOH', 'CH3OH -> CH3OH', 'C2H5OH -> CH3CH2OH', 'CRESOL -> CRESOL',
+   'GLYALD -> GLYALD', 'HCOOH -> HCOOH', 'HONO -> HONO', 'HYAC -> HYAC', 'ISOP -> ISOP', 'MACR -> MACR',
+   'MEK -> MEK', 'MTERP -> APIN+BPIN+LIMON+MYRC', 'APIN -> APIN', 'BPIN -> BPIN', 'LIMON -> LIMON', 
+   'MYRC -> MYRC', 'MVK -> MVK', 'PHENOL -> PHENOL', 'HCN -> HCN', 'CH3CN -> CH3CN', 
+   'TOLUENE -> TOLUENE', 'BENZENE -> BENZENE', 'XYLENES -> XYLENE', 'XYLOL -> XYLOL',
+   'OC -> OC;aerosol', 'BC -> BC;aerosol', 'PM25 -> PM25;aerosol', 'PM10 -> PM10;aerosol',
+   'pom_a4 -> 1.4*OC;aerosol', 'bc_a4 -> BC;aerosol',
+   'num_bc_a4((particles/cm2/s)(molecules/mole)(g/kg)) -> 5.60298303e18*BC;aerosol',
+   'num_pom_a4((particles/cm2/s)(molecules/mole)(g/kg)) -> 1.33350996e19*OC;aerosol',
+   'SVOC->0.03251613*OC;aerosol', 
+   'IVOC->0.045652*C3H6+0.047826*C3H8+0.032609*C2H6+0.030435*C2H4+0.06087*BIGENE+0.07826*BIGALK+0.063043*CH3COCH3+0.07826*MEK+0.047826*CH3CHO+0.032609*CH2O+0.0848*BENZENE+0.1*TOLUENE+0.1152*XYLENE'
+/
+EOF
+
+cd $pathgridday
+/glade/u/home/emmons/EMISSIONS/FINN/grid_finn_fire_emis_v2020/src/fire_emis < $file_inp  >& log_${firelab}_f01_$date_to_process.out
+
+
+echo "=== save files to campaign ==="
+cp /glade/derecho/scratch/emmons/finn2.9.1nrt_emis_txt/FINNv2.9*_${YYYYMMDD}.txt /glade/campaign/acom/acom-weather/emmons/emissions_finn/finn2.9nrt/emis_txt_v2.9.1/
+cp /glade/derecho/scratch/emmons/finn2.9nrt_output/out*${YYYYJJJ}*.csv /glade/campaign/acom/acom-weather/emmons/emissions_finn/finn2.9nrt/processedfires/
+
+# make sure everyone can read files
+chmod -R +r /glade/campaign/acom/acom-weather/emmons/emissions_finn/finn2.9nrt/*
+chmod -R +x $pathgrid/*
+
+echo "=== FINN2.9nrt completed $(date -Iseconds) ==="
+
+exit 0
+

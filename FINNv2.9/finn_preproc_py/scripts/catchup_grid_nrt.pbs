@@ -1,0 +1,72 @@
+#!/bin/tcsh
+#PBS -N grid_finn29nrt
+#PBS -A P19010000
+#PBS -l select=1:ncpus=1:mpiprocs=1:mem=30G
+#PBS -l walltime=12:00:00
+#PBS -q casper
+
+#
+# run on casper: qsub -v dateEmiss=2023-12-02 script_run_grid.pbs
+
+echo "NRT FINN2.9 gridding for " $1 $2 $dateEmiss
+
+set firelab = 'NRTmodvrs'
+
+set date_emis=$dateEmiss
+echo "date_emis = " $date_emis
+set yj = `date -d $date_emis +'%Y%j'`
+set yy = `date -d $date_emis +'%Y'`
+set mm = `date -d $date_emis +'%m'`
+set dd = `date -d $date_emis +'%d'`
+
+echo $yj $yy $mm $dd
+
+set pathgrid = "/glade/campaign/acom/acom-weather/emmons/emissions_finn/finn2.9nrt/emis_grid_v2.9.1"
+
+set pathgridday = "$pathgrid/$yy$mm$dd"
+
+cd /glade/work/emmons/FINN_python/FINNv2.9nrt
+
+  set file_inp = /glade/work/emmons/FINN_python/FINNv2.9nrt/finn_nrt_grid_01.inp
+  if( -e $file_inp ) then
+    rm -f $file_inp
+  endif
+
+  echo "&control" >> $file_inp
+  echo "fire_directory    = '/glade/derecho/scratch/emmons/finn2.9.1nrt_emis_txt/', " >> $file_inp
+  echo "fire_filename(1)  = 'FINNv2.9.1_NRTmodvrs_MOZART_$yy$mm$dd.txt' " >> $file_inp
+  echo "start_date     = '$date_emis', " >> $file_inp
+  echo "end_date       = '$date_emis', " >> $file_inp
+  echo "output_timing  = 'daily', " >> $file_inp
+  echo "Model          = 'CAMFV', " >> $file_inp
+  echo "resol          = '0.1x0.1', " >> $file_inp
+  echo "EmisType       = 'bb_surface_daily', " >> $file_inp
+  echo "defaultUnits   = 'molecules/cm^2/s', " >> $file_inp
+  echo "FinnVers       = '2.9.1_${firelab}', " >> $file_inp
+  echo "glb2fire_map = 'CO -> CO', 'CO2 -> CO2', 'CH4 -> CH4', 'NO -> NO', 'NO2 -> NO2', 'SO2 -> SO2', 'NH3 -> NH3', " >> $file_inp
+  echo "   'BIGALK -> BIGALK', 'BIGENE -> BIGENE', 'BZALD -> BZALD', 'C2H2 -> C2H2', 'C2H4 -> C2H4', 'C2H6 -> C2H6', " >> $file_inp
+  echo "   'C3H6 -> C3H6', 'C3H8 -> C3H8', 'CH2O -> CH2O', 'CH3CHO -> CH3CHO', 'CH3COCH3 -> CH3COCH3', " >> $file_inp
+  echo "   'CH3COCHO -> MGLY', 'CH3COOH -> CH3COOH', 'CH3OH -> CH3OH', 'C2H5OH -> CH3CH2OH', 'CRESOL -> CRESOL', " >> $file_inp
+  echo "   'GLYALD -> GLYALD', 'HCOOH -> HCOOH', 'HONO -> HONO', 'HYAC -> HYAC', 'ISOP -> ISOP', 'MACR -> MACR', " >> $file_inp
+  echo "   'MEK -> MEK', 'MTERP -> APIN+BPIN+LIMON+MYRC', 'APIN -> APIN', 'BPIN -> BPIN', 'LIMON -> LIMON', " >> $file_inp
+  echo "   'MYRC -> MYRC', 'MVK -> MVK', 'PHENOL -> PHENOL', 'HCN -> HCN', 'CH3CN -> CH3CN', " >> $file_inp
+  echo "   'TOLUENE -> TOLUENE', 'BENZENE -> BENZENE', 'XYLENES -> XYLENE', 'XYLOL -> XYLOL', " >> $file_inp
+  echo "   'OC -> OC;aerosol', 'BC -> BC;aerosol', 'PM25 -> PM25;aerosol', 'PM10 -> PM10;aerosol', " >> $file_inp
+  echo "   'pom_a4 -> 1.4*OC;aerosol', 'bc_a4 -> BC;aerosol', " >> $file_inp
+  echo "   'num_bc_a4((particles/cm2/s)(molecules/mole)(g/kg)) -> 5.60298303e18*BC;aerosol', " >> $file_inp
+  echo "   'num_pom_a4((particles/cm2/s)(molecules/mole)(g/kg)) -> 1.33350996e19*OC;aerosol', " >> $file_inp 
+  echo "   'SVOC->0.03251613*OC;aerosol', " >> $file_inp
+  echo "   'IVOC->0.045652*C3H6+0.047826*C3H8+0.032609*C2H6+0.030435*C2H4+0.06087*BIGENE+0.07826*BIGALK+0.063043*CH3COCH3+0.07826*MEK+0.047826*CH3CHO+0.032609*CH2O+0.0848*BENZENE+0.1*TOLUENE+0.1152*XYLENE' " >> $file_inp
+  echo "/" >>  $file_inp
+
+  cd $pathgridday
+  /glade/u/home/emmons/EMISSIONS/FINN/grid_finn_fire_emis_v2020/src/fire_emis < $file_inp  >& log_${firelab}_f01_$date_emis.out
+
+
+# set permissions for all to read
+chmod +r *
+cd $pathgrid
+chmod +rx $pathgridday
+
+exit 0
+

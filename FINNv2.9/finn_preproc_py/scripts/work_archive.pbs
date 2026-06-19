@@ -1,0 +1,94 @@
+#!/bin/bash
+#PBS -N finn_archive
+#PBS -A P19010000
+#PBS -l select=1:ncpus=4:mpiprocs=4:mem=32G
+#PBS -l walltime=12:00:00
+#PBS -q casper
+
+# -----------------------------------------------------------------------------
+# Process one day from multi-month finalized FIRMS archive files using
+# finn_py. 
+#
+# The whole archive file is loaded per-array-task; for a typical year of
+# global data that's well under a minute of overhead per job, which is
+# negligible vs the per-day step1/step2 work.  If your archive is so big
+# that the load dominates, pre-split into per-month or per-week files
+# and reduce -J accordingly.
+#
+# Submit:    qsub work_archive.pbs
+# -----------------------------------------------------------------------------
+
+set -euo pipefail
+
+module load conda
+conda activate npl-2026a
+
+YEAR_RST=2024
+YEAR_AF=2025
+DD1=181
+DD2=270
+
+
+# paths for input 
+FINN_PY_ROOT=/glade/work/emmons/FINN_python/FINN2_pure_python/finn_py_archive
+RASTER_DIR=/glade/derecho/scratch/emmons/finnpy_inputs/finn_rasters_global
+
+# paths for output
+WORK_DIR=/glade/derecho/scratch/emmons/finn2.9_${YEAR_AF}_work
+OUT_DIR=/glade/derecho/scratch/emmons/finn2.9_${YEAR_AF}_output
+
+# save all output in a log file
+sd1=$(printf "%03d" $DD1)
+sd2=$(printf "%03d" $DD2)
+LOGFILE=${OUT_DIR}/logs/finnpy_${YEAR_AF}_${sd1}_${sd2}.log
+
+exec > ${LOGFILE} 2>&1
+
+export TMPDIR=/glade/derecho/scratch/${USER}/tmp_finn
+mkdir -p $TMPDIR
+
+# Pass the full file paths for the archive(s) you want this batch to use.
+# These can be MODIS C6 + VIIRS C2 for the same year, or any combination
+# you've staged.  The pipeline filters by date internally.
+
+AF_ROOT=/glade/derecho/scratch/emmons/finnpy_inputs/AF_archive
+
+# 2024 fires
+#AF_FILES=(
+#    ${AF_ROOT}/fire_archive_M-C61_20231231_20240701.csv
+#    ${AF_ROOT}/fire_archive_SV-C2_20231231_20240701.csv
+#    ${AF_ROOT}/fire_archive_M-C61_20240630_20250101.csv
+#    ${AF_ROOT}/fire_archive_SV-C2_20240630_20250101.csv
+#)
+# 2025 fires
+AF_FILES=(
+    ${AF_ROOT}/fire_archive_M-C61_20241231_20260101.csv
+    ${AF_ROOT}/fire_archive_SV-C2_20241231_20260101.csv
+)
+
+
+for (( day_ind=DD1; day_ind<=DD2; day_ind++ )); do
+
+   DOY=$(printf "%03d" $day_ind)
+   YYYYJJJ=${YEAR_AF}${DOY}
+
+   cd $FINN_PY_ROOT
+
+   echo "=== date $YYYYJJJ  ==="
+   echo "started: $(date -Iseconds)"
+   echo
+
+   python scripts/work_archive.py \
+    --date         $YYYYJJJ \
+    --af-files     "${AF_FILES[@]}" \
+    --raster-dir   $RASTER_DIR \
+    --work-dir     $WORK_DIR \
+    --out-dir      $OUT_DIR \
+    --year-rst     $YEAR_RST
+
+   echo
+   echo "=== finished: $(date -Iseconds) ==="
+
+done
+
+exit 0

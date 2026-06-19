@@ -1,0 +1,81 @@
+#!/bin/bash
+#PBS -N emis
+#PBS -A P19010000
+#PBS -l select=1:ncpus=4:mpiprocs=4:mem=32G
+#PBS -l walltime=4:00:00
+#PBS -q casper
+#PBS -j oe
+
+export TMPDIR=/glade/derecho/scratch/emmons/tmp_finn
+mkdir -p $TMPDIR
+
+# vegetation map year
+YEAR_RST=2023
+YEAR_AF=2024
+# Day of year range
+JD1=101
+JD2=366
+
+sd1=$(printf "%03d" $JD1)
+sd2=$(printf "%03d" $JD2)
+LOGFILE=emiscalc_${YEAR_AF}_${sd1}_${sd2}.log
+exec > ${LOGFILE} 2>&1
+
+for (( day_ind=JD1; day_ind<=JD2; day_ind++ )); do
+
+  DOY=$(printf "%03d" $day_ind)
+  YYYYJJJ=${YEAR_AF}${DOY}
+
+  # Convert DOY to MMDD. Use '10#' to force Bash to treat the number as base-10.
+  DAYS_TO_ADD=$(( 10#$DOY - 1 ))
+  date_emis=$(date -d "${YEAR_AF}-01-01 + ${DAYS_TO_ADD} days" +"%Y-%m-%d")
+  YYYYMMDD=$(date -d "$date_emis" +"%Y%m%d")
+
+  echo "=== calculate emissions $(date -Iseconds) ==="
+  cd /glade/work/emmons/FINN_python/FINN2_pure_python/finn_py_archive/scripts
+  idl -e finn2_9_1_calc_emis_archive -args $YYYYJJJ $YEAR_RST
+
+  echo "=== grid text files to 0.1deg $(date -Iseconds) ==="
+
+  pathgrid="/glade/campaign/acom/acom-weather/emmons/emissions_finn/finn2.9/emis_grid_v2.9.1/"
+  pathgridday="$pathgrid$YYYYMMDD"
+  mkdir -p $pathgridday
+  firelab="modvrs"
+  file_inp="/glade/work/emmons/FINN_python/FINN2_pure_python/finn_py_archive/scripts/finn_nrt_grid_01.inp"
+
+cat <<EOF > "$file_inp"
+&control
+fire_directory    = '/glade/campaign/acom/acom-weather/emmons/emissions_finn/finn2.9/emis_txt_v2.9.1/',
+fire_filename(1)  = 'FINNv2.9.1_modvrs_MOZART_${YYYYMMDD}.txt',
+start_date     = '$date_emis',
+end_date       = '$date_emis',
+output_timing  = 'daily',
+Model          = 'CAMFV',
+resol          = '0.1x0.1',
+EmisType       = 'bb_surface_daily',
+defaultUnits   = 'molecules/cm^2/s',
+FinnVers       = '2.9.1_${firelab}',
+glb2fire_map = 'CO -> CO', 'CO2 -> CO2', 'CH4 -> CH4', 'NO -> NO', 'NO2 -> NO2', 'SO2 -> SO2', 'NH3 -> NH3',
+   'BIGALK -> BIGALK', 'BIGENE -> BIGENE', 'BZALD -> BZALD', 'C2H2 -> C2H2', 'C2H4 -> C2H4', 'C2H6 -> C2H6',
+   'C3H6 -> C3H6', 'C3H8 -> C3H8', 'CH2O -> CH2O', 'CH3CHO -> CH3CHO', 'CH3COCH3 -> CH3COCH3',
+   'CH3COCHO -> MGLY', 'CH3COOH -> CH3COOH', 'CH3OH -> CH3OH', 'C2H5OH -> CH3CH2OH', 'CRESOL -> CRESOL',
+   'GLYALD -> GLYALD', 'HCOOH -> HCOOH', 'HONO -> HONO', 'HYAC -> HYAC', 'ISOP -> ISOP', 'MACR -> MACR',
+   'MEK -> MEK', 'MTERP -> APIN+BPIN+LIMON+MYRC', 'APIN -> APIN', 'BPIN -> BPIN', 'LIMON -> LIMON',
+   'MYRC -> MYRC', 'MVK -> MVK', 'PHENOL -> PHENOL', 'HCN -> HCN', 'CH3CN -> CH3CN',
+   'TOLUENE -> TOLUENE', 'BENZENE -> BENZENE', 'XYLENES -> XYLENE', 'XYLOL -> XYLOL',
+   'OC -> OC;aerosol', 'BC -> BC;aerosol', 'PM25 -> PM25;aerosol', 'PM10 -> PM10;aerosol',
+   'pom_a4 -> 1.4*OC;aerosol', 'bc_a4 -> BC;aerosol',
+   'num_bc_a4((particles/cm2/s)(molecules/mole)(g/kg)) -> 5.60298303e18*BC;aerosol',
+   'num_pom_a4((particles/cm2/s)(molecules/mole)(g/kg)) -> 1.33350996e19*OC;aerosol',
+   'SVOC->0.03251613*OC;aerosol',
+   'IVOC->0.045652*C3H6+0.047826*C3H8+0.032609*C2H6+0.030435*C2H4+0.06087*BIGENE+0.07826*BIGALK+0.063043*CH3COCH3+0.07826*MEK+0.047826*CH3CHO+0.032609*CH2O+0.0848*BENZENE+0.1*TOLUENE+0.1152*XYLENE'
+/
+EOF
+
+cd $pathgridday
+/glade/u/home/emmons/EMISSIONS/FINN/grid_finn_fire_emis_v2020/src/fire_emis < $file_inp  >& log_${firelab}_f01_$date_emis.out
+
+
+done
+exit 0
+
