@@ -10,3 +10,4 @@ Documentation for GIS Preprocessor is [README_preprocessor.md](https://github.co
 
 Documentation for Emission estimator is [README_emissions.md](https://github.com/NCAR/finn/tree/master/README_emissions.md)
 
+A fortran program for gridding the emissions text files is also provided in this directory.
