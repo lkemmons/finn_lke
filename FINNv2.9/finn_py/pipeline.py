@@ -99,6 +99,7 @@ def run_nrt(cfg: FinnConfig) -> Path:
             date_definition=cfg.date_definition,
             date_range=date_range,
             filter_persistent_sources=cfg.filter_persistent_sources,
+            duplicate_tropical_modis=cfg.duplicate_tropical_modis,
         )
         work_pnt.to_parquet(work_pnt_path)
         runlog.checkout(len(work_pnt))

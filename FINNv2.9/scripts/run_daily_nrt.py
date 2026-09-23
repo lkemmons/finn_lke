@@ -98,13 +98,20 @@ def parse_args(argv=None):
     p.add_argument("--date-definition", default="UTC", choices=["UTC", "LST"],
                    help="how to assign each detection to a calendar day "
                         "(default: %(default)s)")
-    p.add_argument("--tropical-carryover", action="store_true",
-                   help="include the previous day's MODIS detections "
-                        "within --tropics-lat-bounds, re-labelled with "
-                        "the current day's date.  Replicates the original "
-                        "FINN's compensation for MODIS swath gaps; "
-                        "without it, finn_py produces noticeably fewer "
-                        "tropical polygons than FINN2.")
+    trop_grp = p.add_mutually_exclusive_group()
+    trop_grp.add_argument("--tropical-carryover", action="store_true",
+                           help="include the previous day's MODIS detections "
+                                "within --tropics-lat-bounds, re-labelled with "
+                                "the current day's date.  Replicates the "
+                                "original FINN's compensation for MODIS swath "
+                                "gaps; without it, finn_py produces noticeably "
+                                "fewer tropical polygons than FINN2.")
+    trop_grp.add_argument("--no-tropical-carryover", action="store_true",
+                           help="disable ALL tropical carryover — skip the "
+                                "yesterday-file lookup AND disable step1.prep's "
+                                "automatic forward-day duplication of tropical "
+                                "MODIS.  Use when comparing runs with and "
+                                "without any tropical carryover at all.")
     p.add_argument("--tropics-lat-bounds", nargs=2, type=float,
                    default=[-23.5, 23.5],
                    metavar=("LAT_MIN", "LAT_MAX"),
@@ -198,6 +205,10 @@ def main(argv=None) -> int:
         carryover_files = find_carryover_modis(
             yyyyjjj, args.af_root, args.af_modis,
         )
+    if args.no_tropical_carryover:
+        log.info("tropical carryover: DISABLED (--no-tropical-carryover); "
+                 "no yesterday-file lookup and step1.prep will not duplicate "
+                 "tropical MODIS forward one day")
 
     cfg = FinnConfig(
         tag_af=tag,
@@ -212,6 +223,7 @@ def main(argv=None) -> int:
         tropical_carryover_files=carryover_files,
         tropical_carryover_to_date=date if carryover_files else None,
         tropical_lat_bounds=tuple(args.tropics_lat_bounds),
+        duplicate_tropical_modis=not args.no_tropical_carryover,
     )
     try:
         result = run_nrt(cfg)

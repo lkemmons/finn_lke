@@ -1,6 +1,14 @@
 # Versions
 
-Latest version is always "master" branch.  Milestone versions are tagged and listed below.
+Latest version is always "main" branch.  Milestone versions are tagged and listed below.
+
+### finn2.9
+
+FINNv2.5 preprocessor rewritten into completely python.  Results near-identical to FINNv2.5.
+
+v2.9.1: uses v2.5 emission factors
+
+v2.9.2: uses updated emission factors based on NEIVA 
 
 ### finn2.5.2
 

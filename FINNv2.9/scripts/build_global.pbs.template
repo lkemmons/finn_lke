@@ -1,0 +1,61 @@
+#!/bin/bash
+#PBS -N finn_build_global
+#PBS -A <YOUR_PROJECT_CODE>                     # <-- EDIT
+#PBS -q main
+#PBS -l select=1:ncpus=8:mem=64GB
+#PBS -l walltime=06:00:00
+#PBS -J 2002-2025                               # job-array index = year
+#PBS -j oe
+#PBS -o /glade/derecho/scratch/<USER>/finn_logs/build_${PBS_JOBID}_year${PBS_ARRAY_INDEX}.log
+# -----------------------------------------------------------------------------
+# Build one year's global MODIS LCT + VCF mosaic.  Submitted as a 24-job
+# array (2002..2025); years are independent so they run concurrently and
+# the whole 2002–2025 set finishes in roughly the wall time of one year.
+#
+# Submit with:    qsub build_global.pbs.template
+# Watch with:     qstat -t -u <USER>
+# Cancel array:   qdel <JOBID>[]
+#
+# To run a subset of years use -J 2010-2015, or run a single year by passing
+# --year explicitly and removing the -J line.
+# -----------------------------------------------------------------------------
+
+set -euo pipefail
+
+# --- conda env that has rasterio, pyhdf, gdal, geopandas, etc. ---------------
+module load conda
+conda activate finn_py                          # <-- EDIT
+
+# --- paths (EDIT) ------------------------------------------------------------
+FINN_PY_ROOT=/glade/u/home/<USER>/finn_py
+LCT_ROOT=/glade/derecho/scratch/<USER>/MCD12Q1
+VCF_ROOT=/glade/derecho/scratch/<USER>/MOD44B
+REGIONS=/glade/derecho/scratch/<USER>/regions/All_Countries.shp
+RASTER_DIR=/glade/derecho/scratch/<USER>/finn_rasters_global
+
+YEAR=${PBS_ARRAY_INDEX}                         # set by -J 2002-2025
+
+# --- env knobs for big GDAL warps --------------------------------------------
+# Match GDAL_CACHEMAX (in MB) to your --mem and --ncpus.
+export GDAL_CACHEMAX=4096
+export GDAL_NUM_THREADS=ALL_CPUS
+# Keep VRTs from blowing up disk in $TMPDIR if many tiles.
+export TMPDIR=/glade/derecho/scratch/${USER}/tmp_finn
+mkdir -p $TMPDIR
+
+cd $FINN_PY_ROOT
+
+echo "=== year $YEAR  (job $PBS_JOBID, array index $PBS_ARRAY_INDEX) ==="
+echo "host: $(hostname)   started: $(date -Iseconds)"
+echo
+
+python scripts/build_global_rasters.py \
+    --year         $YEAR \
+    --lct-root     $LCT_ROOT \
+    --vcf-root     $VCF_ROOT \
+    --regions      $REGIONS \
+    --raster-dir   $RASTER_DIR \
+    --verbose
+
+echo
+echo "=== finished: $(date -Iseconds) ==="

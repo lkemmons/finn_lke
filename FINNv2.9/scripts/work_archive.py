@@ -92,19 +92,25 @@ def parse_args(argv=None):
                         "Default on; archive's `type` column drives this.")
     p.add_argument("--no-filter-persistent", action="store_false",
                    dest="filter_persistent")
-    p.add_argument("--tropical-carryover-file", type=Path, default=None,
-                   metavar="FILE",
-                   help="optional archive file for the previous day's "
-                        "MODIS detections (used only if you're running "
-                        "single-day from per-day archive slices; with one "
-                        "big multi-month archive file this isn't needed "
-                        "because the previous day's data is already in "
-                        "the same file and step1.prep duplicates "
-                        "tropical MODIS into the next day automatically).")
+    trop_grp = p.add_mutually_exclusive_group()
+    trop_grp.add_argument("--tropical-carryover", action="store_true",
+                           help="acknowledge tropical carryover (default).  "
+                                "step1.prep duplicates every tropical MODIS "
+                                "detection into the next day; for a multi-day "
+                                "archive that means yesterday's tropical MODIS "
+                                "feeds into today automatically.  This flag "
+                                "makes the behaviour visible in the log.")
+    trop_grp.add_argument("--no-tropical-carryover", action="store_true",
+                           help="disable step1.prep's automatic duplication "
+                                "of tropical MODIS detections into the next "
+                                "day.  Use this when you want to see what "
+                                "finn_py produces without any tropical "
+                                "carryover.")
     p.add_argument("--tropics-lat-bounds", nargs=2, type=float,
                    default=[-23.5, 23.5],
                    metavar=("LAT_MIN", "LAT_MAX"),
-                   help="latitude bounds for --tropical-carryover-file "
+                   help="latitude bounds treated as tropical for the "
+                        "step1.prep automatic MODIS duplication "
                         "(default: -23.5 23.5)")
     p.add_argument("--skip-existing", action="store_true", default=True,
                    help="skip if output file already exists (default)")
@@ -152,14 +158,13 @@ def main(argv=None) -> int:
     for f in args.af_files:
         log.info("  %s  (%.1f MB)", f, f.stat().st_size / 1e6)
 
-    carryover_files = []
-    if args.tropical_carryover_file:
-        if not args.tropical_carryover_file.exists():
-            log.error("tropical-carryover file not found: %s",
-                       args.tropical_carryover_file)
-            return 1
-        carryover_files = [args.tropical_carryover_file]
-        log.info("tropical carryover: %s", args.tropical_carryover_file)
+    if args.no_tropical_carryover:
+        log.info("tropical carryover: DISABLED (--no-tropical-carryover); "
+                 "step1.prep will not duplicate tropical MODIS forward one day")
+    elif args.tropical_carryover:
+        log.info("tropical carryover: automatic via step1.prep "
+                 "(previous day's MODIS is already in the archive; "
+                 "no extra file needed)")
 
     cfg = FinnConfig(
         tag_af=tag,
@@ -172,9 +177,12 @@ def main(argv=None) -> int:
         date_definition=args.date_definition,
         filter_persistent_sources=args.filter_persistent,
         summary_file=args.out_dir / f"summary_{tag}.txt",
-        tropical_carryover_files=carryover_files,
-        tropical_carryover_to_date=date if carryover_files else None,
+        # No tropical_carryover_files: for a multi-day archive that
+        # would double-count with step1.prep's automatic duplication.
+        tropical_carryover_files=[],
+        tropical_carryover_to_date=None,
         tropical_lat_bounds=tuple(args.tropics_lat_bounds),
+        duplicate_tropical_modis=not args.no_tropical_carryover,
     )
     try:
         result = run_nrt(cfg)

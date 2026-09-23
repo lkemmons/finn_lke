@@ -151,6 +151,14 @@ class FinnConfig:
     tropical_carryover_to_date: object | None = None  # datetime.date | None
     tropical_lat_bounds: tuple[float, float] = (-23.5, 23.5)
 
+    # Controls step1.prep's automatic duplication of tropical MODIS
+    # detections into the next day (the "dup tropics" step from the
+    # original FINN's step1_prep_v7m.sql, which compensates for MODIS
+    # swath gaps in the tropics).  Turn OFF via --no-tropical-carryover
+    # on both work_archive.py and run_daily_nrt.py if you want to see
+    # what the pipeline produces without any tropical carryover at all.
+    duplicate_tropical_modis: bool = True
+
     # Pipeline toggles.
     run_import: bool = True
     run_step1: bool = True

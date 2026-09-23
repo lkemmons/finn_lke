@@ -1,0 +1,128 @@
+# FINN text-format species → molecular weight lookup
+#
+# Format:
+#   species,type,mw,notes
+#
+# Where `type` is one of:
+#   gas      — input values are mol/hour (or mol/day), converted to
+#              molecules/cm2/s via Avogadro
+#   aerosol  — input values are kg/hour (or kg/day); the "MW" is the
+#              sentinel 1.0 used in the FINN → CAM-Chem convention
+#              (1 kg → 1000/MW mol-equivalent → molec via Avogadro).
+#              For aerosol MASS columns.
+#   number   — input values are already particle counts / hour; no
+#              MW conversion, output units become number/cm2/s.
+#
+# Metadata columns NEVER need MW entries (they aren't gridded):
+#   DAY FIREID POLYID GENVEG LATI LONGI AREA BMASS FRP HOUR
+#   datetimeUTC datetimeLT Country TrendCountry
+#
+# Uncertain species — MW column blank; the tool will skip those with a
+# warning.  Fill in your chemistry mechanism's values before enabling
+# them.
+
+species,type,mw,notes
+
+# --- Primary aerosols (kg/hour, MW=1 sentinel) ---
+BC,aerosol,1,black carbon
+OC,aerosol,1,organic carbon
+PM2.5,aerosol,1,particulate matter <= 2.5 um
+PM10,aerosol,1,particulate matter <= 10 um
+so4_a1,aerosol,1,accumulation-mode sulfate mass
+bc_a4,aerosol,1,Aitken-mode black carbon mass
+pom_a4,aerosol,1,Aitken-mode primary organic matter mass
+
+# --- Aerosol number concentrations (number/hour) ---
+num_a1_so4,number,1,accumulation-mode sulfate number
+num_a4_bc,number,1,Aitken-mode BC number
+num_a4_pom,number,1,Aitken-mode POM number
+
+# --- Common gases (mol/hour) ---
+CO2,gas,44.01,carbon dioxide
+CH4,gas,16.04,methane
+CO,gas,28.01,carbon monoxide
+NOx_asNO,gas,30.01,NOx expressed as NO
+HONO,gas,47.01,nitrous acid
+NH3,gas,17.03,ammonia
+SO2,gas,64.06,sulfur dioxide
+SO2x0.975,gas,64.06,SO2 scaled by 0.975 (sub-stream)
+DMS,gas,62.13,dimethyl sulfide
+OCS,gas,60.08,carbonyl sulfide
+H2,gas,2.02,molecular hydrogen
+N2O,gas,44.01,nitrous oxide
+HCN,gas,27.03,hydrogen cyanide
+CH3CN,gas,41.05,acetonitrile
+HNCO,gas,43.03,isocyanic acid
+
+# --- Halocarbons ---
+HCL,gas,36.46,hydrogen chloride
+CH3I,gas,141.94,methyl iodide
+CH3BR,gas,94.94,methyl bromide
+CH3CL,gas,50.49,methyl chloride
+
+# --- Simple alkenes / alkynes / alkanes ---
+C2H2,gas,26.04,acetylene
+C2H4,gas,28.05,ethylene
+C2H6,gas,30.07,ethane
+C3H6,gas,42.08,propene
+C3H8,gas,44.10,propane
+
+# --- Lumped alkanes / alkenes (CAM-Chem MOZART style) ---
+BIGENE,gas,56.11,lumped >=C4 alkenes (as butene)
+BIGALK,gas,72.15,lumped >=C5 alkanes (as pentane)
+ISOBUTANE,gas,58.12,isobutane
+NBUTANE,gas,58.12,n-butane
+IPENTANE,gas,72.15,isopentane
+NPENTANE,gas,72.15,n-pentane
+C6ALKANES,gas,86.18,C6 alkanes (as hexane)
+
+# --- Terpenes / aromatics ---
+ISOP,gas,68.12,isoprene
+MTERP,gas,136.24,lumped monoterpenes (as pinene)
+BENZENE,gas,78.11,benzene
+TOLUENE,gas,92.14,toluene
+XYLENES,gas,106.16,lumped xylenes
+STYRENE,gas,104.15,styrene
+
+# --- Oxygenated VOCs ---
+C2H4O,gas,44.05,acetaldehyde / ethylene oxide isomers
+CH3OH,gas,32.04,methanol
+C2H5OH,gas,46.07,ethanol
+IPROPANOL,gas,60.10,isopropanol
+CH2O,gas,30.03,formaldehyde
+CH3CHO,gas,44.05,acetaldehyde
+GLYOXAL,gas,58.04,glyoxal (CHOCHO)
+GLYALD,gas,60.05,glycolaldehyde
+CH3COCHO,gas,72.06,methylglyoxal
+PROPANAL,gas,58.08,propanal
+BUTANAL,gas,72.11,butanal
+CH3COCH3,gas,58.08,acetone
+HYAC,gas,74.08,hydroxyacetone
+MEK,gas,72.11,methyl ethyl ketone
+MACR,gas,70.09,methacrolein
+MVK,gas,70.09,methyl vinyl ketone
+HCOOH,gas,46.03,formic acid
+CH3COOH,gas,60.05,acetic acid
+BIACETYL,gas,86.09,2 3-butanedione (biacetyl)
+
+# --- Furans ---
+FURAN,gas,68.07,furan
+FURAN2M,gas,82.10,2-methylfuran
+FURAN3M,gas,82.10,3-methylfuran
+FURAN25M,gas,96.13,2 5-dimethylfuran
+FURANONE,gas,84.07,furanone (2(5H)-furanone)
+FURFAL,gas,96.08,furfural
+
+# --- Aromatic OVOCs ---
+PHENOL,gas,94.11,phenol
+CRESOL,gas,108.14,cresol (methylphenol)
+BZALD,gas,106.12,benzaldehyde
+
+# --- Uncertain / mechanism-specific: MW BLANK → tool will skip ---
+# Fill in from your CAM-Chem chem_mech.in (or equivalent) before
+# enabling these.
+MALARKY,gas,,lumped larger aromatics — verify MW in your mechanism
+ALKNIT,gas,,lumped alkyl nitrates (RONO2) — depends on mechanism (~119 for C5H11NO3)
+SVOC,gas,,semivolatile organic compounds — mechanism-dependent lumped MW
+IVOC,gas,,intermediate volatility organic compounds — mechanism-dependent
+SOAE,gas,,SOA precursor emission — verify MW

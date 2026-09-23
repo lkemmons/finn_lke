@@ -88,11 +88,18 @@ def prep(
     date_definition: str = "UTC",
     date_range: tuple[dt.date, dt.date] | None = None,
     filter_persistent_sources: bool = True,
+    duplicate_tropical_modis: bool = True,
 ) -> gpd.GeoDataFrame:
     """Build `work_pnt` from raw AF detections.
 
     Equivalent of `step1_prep_v7m.sql` Part 3, minus everything about
     table creation and SQL function definitions.
+
+    ``duplicate_tropical_modis`` (default True) controls the "dup
+    tropics" step, which duplicates every tropical MODIS detection into
+    the next calendar day to compensate for MODIS swath gaps.  Turn
+    OFF only if you want to see the pipeline's raw output with no
+    tropical carryover.
     """
     df = af.copy()
 
@@ -118,7 +125,20 @@ def prep(
         df["instrument"] = inst.where(inst.isin(["MODIS", "VIIRS"]), derived)
     else:
         df["instrument"] = derived
-    assert df["instrument"].notna().all(), "could not derive instrument for some rows"
+
+    # If any rows still have an unidentifiable instrument (e.g. an
+    # unrecognised satellite character in archive data, AND no per-file
+    # filename hint), drop them with a warning rather than crashing.
+    unknown = df["instrument"].isna()
+    if unknown.any():
+        sample = df.loc[unknown, ["satellite"]].head(5).to_dict("records")
+        log.warning(
+            "dropping %d / %d rows (%.2f%%) with unidentifiable instrument; "
+            "first few satellite values: %s",
+            int(unknown.sum()), len(df), 100.0 * unknown.sum() / len(df),
+            sample,
+        )
+        df = df.loc[~unknown].copy()
     df["confident"] = [
         _is_confident(i, c) for i, c in zip(df["instrument"], df["confidence"])
     ]
@@ -149,16 +169,19 @@ def prep(
     df["rawid"] = np.arange(len(df), dtype="int64")
 
     # --- Tropics duplication (step1_prep "dup tropics") ---
-    trop_mask = (df["instrument"] == "MODIS") & (df["lat"].abs() <= TROPICS_LAT_DEG)
-    if trop_mask.any():
-        dup = df.loc[trop_mask].copy()
-        oneday = pd.Timedelta(days=1)
-        dup["acq_date_utc"] = dup["acq_date_utc"] + oneday
-        dup["acq_date_lst"] = dup["acq_date_lst"] + oneday
-        dup["acq_datetime_lst"] = dup["acq_datetime_lst"] + oneday
-        dup["acq_date_use"] = dup["acq_date_use"] + oneday
-        df = pd.concat([df, dup], ignore_index=True)
-        log.info("duplicated %d tropical MODIS rows to next day", trop_mask.sum())
+    if duplicate_tropical_modis:
+        trop_mask = (df["instrument"] == "MODIS") & (df["lat"].abs() <= TROPICS_LAT_DEG)
+        if trop_mask.any():
+            dup = df.loc[trop_mask].copy()
+            oneday = pd.Timedelta(days=1)
+            dup["acq_date_utc"] = dup["acq_date_utc"] + oneday
+            dup["acq_date_lst"] = dup["acq_date_lst"] + oneday
+            dup["acq_datetime_lst"] = dup["acq_datetime_lst"] + oneday
+            dup["acq_date_use"] = dup["acq_date_use"] + oneday
+            df = pd.concat([df, dup], ignore_index=True)
+            log.info("duplicated %d tropical MODIS rows to next day", trop_mask.sum())
+    else:
+        log.info("tropical MODIS duplication disabled (duplicate_tropical_modis=False)")
 
     # --- Date filter ---
     if date_range is not None:

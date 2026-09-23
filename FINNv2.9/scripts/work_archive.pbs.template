@@ -1,0 +1,67 @@
+#!/bin/bash
+#PBS -N finn_archive
+#PBS -A <YOUR_PROJECT_CODE>                     # <-- EDIT
+#PBS -q main
+#PBS -l select=1:ncpus=4:mem=32GB
+#PBS -l walltime=02:00:00
+#PBS -J 1-366                                    # <-- EDIT: day-of-year range
+#PBS -j oe
+#PBS -o /glade/derecho/scratch/<USER>/finn_logs/arc_${PBS_JOBID}_doy${PBS_ARRAY_INDEX}.log
+# -----------------------------------------------------------------------------
+# Process one day from a multi-month finalized FIRMS archive file using
+# finn_py.  Submitted as a job array; each array index is the day-of-
+# year (1..366) for the YEAR variable below.
+#
+# The whole archive file is loaded per-array-task; for a typical year of
+# global data that's well under a minute of overhead per job, which is
+# negligible vs the per-day step1/step2 work.  If your archive is so big
+# that the load dominates, pre-split into per-month or per-week files
+# and reduce -J accordingly.
+#
+# Submit:    qsub work_archive.pbs.template
+# -----------------------------------------------------------------------------
+
+set -euo pipefail
+
+module load conda
+conda activate finn_py                          # <-- EDIT
+
+# --- paths (EDIT) ------------------------------------------------------------
+FINN_PY_ROOT=/glade/u/home/<USER>/finn_py
+RASTER_DIR=/glade/derecho/scratch/<USER>/finn3_rasters
+WORK_DIR=/glade/derecho/scratch/<USER>/finn3_work_archive
+OUT_DIR=/glade/derecho/scratch/<USER>/finn3_out_archive
+
+# Pass the full file paths for the archive(s) you want this batch to use.
+# These can be MODIS C6 + VIIRS C2 for the same year, or any combination
+# you've staged.  The pipeline filters by date internally.
+AF_FILES=(
+    /glade/derecho/scratch/<USER>/finn3_archive/fire_archive_M-C61_2020.csv
+    /glade/derecho/scratch/<USER>/finn3_archive/fire_archive_SV-C2_2020.csv
+)
+
+YEAR=2020                                       # <-- EDIT: archive year
+DOY=$(printf "%03d" $PBS_ARRAY_INDEX)
+YYYYJJJ=${YEAR}${DOY}
+
+# --- env knobs ---------------------------------------------------------------
+export TMPDIR=/glade/derecho/scratch/${USER}/tmp_finn
+mkdir -p $TMPDIR
+
+cd $FINN_PY_ROOT
+
+echo "=== date $YYYYJJJ  (job $PBS_JOBID, array idx $PBS_ARRAY_INDEX) ==="
+echo "host: $(hostname)   started: $(date -Iseconds)"
+echo
+
+python scripts/work_archive.py \
+    --date         $YYYYJJJ \
+    --af-files     "${AF_FILES[@]}" \
+    --raster-dir   $RASTER_DIR \
+    --work-dir     $WORK_DIR \
+    --out-dir      $OUT_DIR \
+    --year-rst     $YEAR \
+    --verbose
+
+echo
+echo "=== finished: $(date -Iseconds) ==="

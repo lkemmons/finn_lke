@@ -1,0 +1,65 @@
+#!/bin/bash
+#PBS -N finn_nrt_daily
+#PBS -A <YOUR_PROJECT_CODE>                     # <-- EDIT
+#PBS -q main
+#PBS -l select=1:ncpus=4:mem=32GB
+#PBS -l walltime=02:00:00
+#PBS -J 100-130                                  # <-- EDIT: day-of-year range
+#PBS -j oe
+#PBS -o /glade/derecho/scratch/<USER>/finn_logs/nrt_${PBS_JOBID}_doy${PBS_ARRAY_INDEX}.log
+# -----------------------------------------------------------------------------
+# Run one day of the finn_py NRT pipeline.  Submitted as a job array; each
+# array index is the day-of-year (1..366) for the YEAR variable below.
+#
+# Submit:    qsub run_daily_nrt.pbs.template
+# Status:    qstat -t -u <USER>
+# Cancel:    qdel <JOBID>[]
+#
+# For a single day, drop the -J line and set DOY explicitly.
+# For multiple non-contiguous days use a comma-separated list, e.g.:
+#   #PBS -J 100,105,110,115
+# -----------------------------------------------------------------------------
+
+set -euo pipefail
+
+module load conda
+conda activate finn_py                          # <-- EDIT
+
+# --- paths (EDIT) ------------------------------------------------------------
+FINN_PY_ROOT=/glade/u/home/<USER>/finn_py
+AF_ROOT=/glade/derecho/scratch/<USER>/finn3_inputs
+RASTER_DIR=/glade/derecho/scratch/<USER>/finn3_rasters
+WORK_DIR=/glade/derecho/scratch/<USER>/finn3_work
+OUT_DIR=/glade/derecho/scratch/<USER>/finn3_out
+
+YEAR=2026                                       # <-- EDIT: year for the rasters
+DOY=$(printf "%03d" $PBS_ARRAY_INDEX)           # zero-pad day-of-year
+YYYYJJJ=${YEAR}${DOY}
+
+# Include previous-day MODIS detections within ±30° latitude, re-labelled
+# as the current day.  Set to "" to skip.  Matches the original FINN
+# behaviour that compensates for MODIS swath gaps in the tropics.
+TROPICAL_CARRYOVER="--tropical-carryover"
+
+# --- env knobs ---------------------------------------------------------------
+export TMPDIR=/glade/derecho/scratch/${USER}/tmp_finn
+mkdir -p $TMPDIR
+
+cd $FINN_PY_ROOT
+
+echo "=== date $YYYYJJJ  (job $PBS_JOBID, array idx $PBS_ARRAY_INDEX) ==="
+echo "host: $(hostname)   started: $(date -Iseconds)"
+echo
+
+python scripts/run_daily_nrt.py \
+    --date         $YYYYJJJ \
+    --af-root      $AF_ROOT \
+    --raster-dir   $RASTER_DIR \
+    --work-dir     $WORK_DIR \
+    --out-dir      $OUT_DIR \
+    --year-rst     $YEAR \
+    $TROPICAL_CARRYOVER \
+    --verbose
+
+echo
+echo "=== finished: $(date -Iseconds) ==="
