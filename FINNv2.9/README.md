@@ -49,24 +49,13 @@ On casper HPC at NCAR, just use `conda activate npl`.
 |----------------------------|------------------------------------------------|----------------------------------------------------|
 | `calc_emis_daily.py`       | polygons (`out_*.gpkg`) + fuel-load / EF CSVs  | Per-fire NetCDF, `(fire,)` dim                     |
 | `grid_emissions.py`        | Per-fire NetCDF (from `calc_emis_daily.py`)    | Gridded NetCDF, `(time, lat, lon)` or `(time, ncol)` |
-| `grid_txt_emissions.py`    | Legacy FINN text CSV (for FINNv2.7-hourly)     | Gridded NetCDF, `(time, lat, lon)` or `(time, ncol)` |
 | `txt_to_perfire_nc.py`     | Legacy FINN text CSV (hourly or daily)         | Per-fire NetCDF, `(polyid, hour)` or `(polyid,)`   |
-
-### File combination
-
-| Script                        | What it does                                                        |
-|-------------------------------|---------------------------------------------------------------------|
-| `concat_finn_daily_hourly.py` | Prepend 24 hourly copies of one daily-average day to an hourly file |
-| `append_daily_to_hourly.py`   | Append 24 hourly copies of one daily-average day to an hourly file  |
-
-Together they let you extend an hourly-cadence file by one day at
-either end, using data from a daily-average source file — while
-keeping uniform hourly cadence throughout (developed for FINNv2.7-hourly).
 
 ### Analysis and visualization
 
 | Script                      | What it does                                                   |
 |-----------------------------|----------------------------------------------------------------|
+| `preview_rasters.py`        | Map annual LCT and VCF GeoTIFF rasters                         |
 | `compute_emis_totals.py`    | Sum a gridded file over regions per timestep → CSV + line plot |
 | `plot_emissions_scrip.py`   | Polygon-fill map of an unstructured SCRIP-grid emissions file  |
 
