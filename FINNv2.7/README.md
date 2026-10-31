@@ -78,3 +78,68 @@ Both handle:
   coordinates before concat, so files that declare
   `fire:coordinates = "lat lon"` mix cleanly with files that don't.
 
+## Legacy text-CSV conventions
+
+Legacy FINN text files carry two conventions that need special
+handling:
+
+### 1. HOUR values are unreliable (FINNv2.7-hourly)
+
+The FINNv2.7 hourly text outputs have the `HOUR` column
+but its values don't match the actual UTC hour of each row.
+`datetimeUTC` is trustworthy (ISO timestamp).
+So the design for `grid_txt_emissions.py` is:
+
+- **HOUR column presence** = signal that the file is *intended* to be
+  hourly (stable structural fact).
+- **HOUR values** = ignored.  Actual UTC hour comes from
+  `pd.to_datetime(df["datetimeUTC"]).dt.hour`.
+- **HOUR column** = dropped before writing, so it can't leak into
+  outputs.
+
+
+### 2. Species aren't in variable names
+
+The gridded (from txt) FINNv2.5 or v2.7 files (both daily and hourly)
+call the emission variable `fire` and put the actual species in a
+variable attribute:
+
+- `fire:map = "CO->CO"` (or `"NO2->NOx_asNO"` — output species on the right)
+- `fire:long_name = "CO fire emissions"` (species is the leading token)
+
+`concat_finn_daily_hourly.py` and `append_daily_to_hourly.py` extract
+the species from these attributes when the variable name is generic
+(`fire`, `emis`, `emission`, `emissions`, `flux`).  Species pairing
+across two directories of `fire`-named files then just works — the
+key isn't the variable name, it's the extracted species.
+
+## Concat / append tools
+
+Both tools (`concat_finn_daily_hourly.py` and
+`append_daily_to_hourly.py`) share the same building blocks and
+differ only in *where* the replicated day goes:
+
+- Concat: prepend 24 hourly rows to the start of the hourly file.
+- Append: append 24 hourly rows to the end.
+
+Common behavior:
+
+- **Rebase daily onto hourly's epoch.**  Real-world files have
+  different time units — daily on `days since 1950-01-01`, hourly on
+  `days since 1970-01-01`.  Because the tools rebuild the daily's
+  `time` coord from scratch from the chosen date and the hourly
+  file's units string, the daily is silently rebased.
+- **Calendar check.**  Gregorian family (`gregorian`, `standard`,
+  `proleptic_gregorian`) treated as equivalent since they differ only
+  pre-1583.  Other calendars (`360_day`, `noleap`, `julian`) refused
+  with a clear error pointing at `cdo setcalendar`.
+- **Normalize coord/data-var status.**  If `lat`/`lon` are data
+  variables in one file and coordinates in the other (which happens
+  when `fire:coordinates = "lat lon"` appears in one but not the
+  other), promote them to coordinates before concat.  Drop `ncol`,
+  `area` and `rrfac` which appear inconsistently across FINN file
+  conventions.
+- **Never double-count.**  The concat tool never passes archive files
+  as `tropical_carryover_files`; the pipeline handles duplication
+  internally via `step1.prep`.
+

@@ -75,7 +75,7 @@ pipeline never touches HDF4 again.
 | `ST_Voronoi` / `st_voronoi_python`                        | `scipy.spatial.Voronoi` with 4-corner ghost points            |
 | `pnt2grp` (connected components)                          | `networkx.connected_components`                               |
 | `pnt2drop` (point skimming)                               | `step1._pnt2drop` (networkx)                                  |
-| `raster2pgsql ... | psql`                                 | `rasters.build_mosaic` (PyHDF → sinu GeoTIFF → warp → COG)    |
+| `raster2pgsql ...  psql`                                  | `rasters.build_mosaic` (PyHDF → sinu GeoTIFF → warp → COG)    |
 | `ST_Clip` + `ST_ValueCount` (LCT majority)                | `rasterio.mask.mask` + `numpy.unique(return_counts=True)`     |
 | `ST_Clip` + `ST_SummaryStatsAgg` (VCF mean)               | `rasterio.mask.mask` + `numpy.nanmean`                        |
 | Region polygon centroid join                              | `geopandas.sjoin` on centroids                                |
@@ -224,29 +224,20 @@ The **only** intentional change vs. the IDL is the output format:
 NetCDF instead of a CSV.  This gives us free metadata (units, MW,
 species type) and free tooling downstream (`xarray`, `netCDF4`).
 
-Per-fire NetCDF layout:
+The per-fire NetCDF files have the dimension `fire`, and include
+the day of year, date, polyid, fireid, lat, lon, area, bmass, genveg,
+frp and emissions for each compound. The attributes of each compound
+include its molecular weight.
 
-```
-dimensions:
-    fire = <N fires>
-variables:
-    float32 <species>(fire)    // one variable per emission species
-        <species>:units = "mol/day"      (gas)
-                    | "kg/day"           (aerosol)
-                    | "number/day"       (number)
-        <species>:molecular_weight_g_per_mol = ...   // 1 for aerosols
-```
-
-The MW = 1 sentinel for aerosols is the CAM-Chem convention: it makes
-the mass-to-"molecule" formula uniform across gases and aerosols
-(`mass_kg = molec × MW / (Avogadro × 1000)` recovers the original kg
-for MW=1 and the true mass for real MWs).
+The FINNv2.5 convention for aerosols was to use MW = 1 and emissions
+were calculated in kg/day.
+FINNv2.9.2 has all emissions as mol/day (gases and aerosols), but
+if the EF_....csv file used has MW=1 then output will be in kg/day.
 
 ## Gridding conventions (CAM/CESM)
 
-Both `grid_emissions.py` (per-fire NetCDF input) and
-`grid_txt_emissions.py` (legacy text CSV input) produce output with
-the **CAM/CESM emission-input schema**:
+The gridding routine `grid_emissions.py` (per-fire NetCDF input)
+produces output with the **CAM/CESM emission-input schema**:
 
 ```
 dimensions:
@@ -294,72 +285,6 @@ the file are then the "expected" clean decimals with no fuzz.
 
 Only the *center* arrays are rounded — edges keep their raw values so
 the binning `searchsorted` stays exact.
-
-## Legacy text-CSV conventions
-
-Legacy FINN text files carry two conventions that need special
-handling:
-
-### 1. HOUR values are unreliable (FINNv2.7-hourly)
-
-Some FINN text outputs have the `HOUR` column but its values don't
-match the actual UTC hour of each row.  `datetimeUTC` is trustworthy
-(ISO timestamp).  So the design is:
-
-- **HOUR column presence** = signal that the file is *intended* to be
-  hourly (stable structural fact).
-- **HOUR values** = ignored.  Actual UTC hour comes from
-  `pd.to_datetime(df["datetimeUTC"]).dt.hour`.
-- **HOUR column** = dropped before writing, so it can't leak into
-  outputs.
-
-Both `grid_txt_emissions.py` and `txt_to_perfire_nc.py` follow this
-rule.  For `txt_to_perfire_nc.py`, mode detection uses HOUR-column
-presence (before it's dropped); hour binning uses `datetimeUTC`.
-
-### 2. Species aren't in variable names
-
-Some FINN files (both daily and hourly) call the emission variable
-`fire` and put the actual species in a variable attribute:
-
-- `fire:map = "CO->CO"` (or `"NO2->NOx_asNO"` — output species on the right)
-- `fire:long_name = "CO fire emissions"` (species is the leading token)
-
-`concat_finn_daily_hourly.py` and `append_daily_to_hourly.py` extract
-the species from these attributes when the variable name is generic
-(`fire`, `emis`, `emission`, `emissions`, `flux`).  Species pairing
-across two directories of `fire`-named files then just works — the
-key isn't the variable name, it's the extracted species.
-
-## Concat / append tools
-
-Both tools (`concat_finn_daily_hourly.py` and
-`append_daily_to_hourly.py`) share the same building blocks and
-differ only in *where* the replicated day goes:
-
-- Concat: prepend 24 hourly rows to the start of the hourly file.
-- Append: append 24 hourly rows to the end.
-
-Common behavior:
-
-- **Rebase daily onto hourly's epoch.**  Real-world files have
-  different time units — daily on `days since 1950-01-01`, hourly on
-  `days since 1970-01-01`.  Because the tools rebuild the daily's
-  `time` coord from scratch from the chosen date and the hourly
-  file's units string, the daily is silently rebased.
-- **Calendar check.**  Gregorian family (`gregorian`, `standard`,
-  `proleptic_gregorian`) treated as equivalent since they differ only
-  pre-1583.  Other calendars (`360_day`, `noleap`, `julian`) refused
-  with a clear error pointing at `cdo setcalendar`.
-- **Normalize coord/data-var status.**  If `lat`/`lon` are data
-  variables in one file and coordinates in the other (which happens
-  when `fire:coordinates = "lat lon"` appears in one but not the
-  other), promote them to coordinates before concat.  Drop `ncol`,
-  `area` and `rrfac` which appear inconsistently across FINN file
-  conventions.
-- **Never double-count.**  The concat tool never passes archive files
-  as `tropical_carryover_files`; the pipeline handles duplication
-  internally via `step1.prep`.
 
 ## Regional totals
 
@@ -432,7 +357,4 @@ notebook or oral history required.
   authoritative.
 - **CRS-mismatch retries** at raster edges.  The original SQL caught
   those by polyid; here we return NaN for that polygon and log it.
-- **Non-gregorian calendars in concat/append.**  Currently refused
-  with a clear error.  cftime-based handling is tractable but a
-  bigger change.
 
