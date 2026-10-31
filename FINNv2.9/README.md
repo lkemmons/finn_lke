@@ -25,7 +25,7 @@ conda install -c conda-forge hdf4 pyhdf        # conda
 pip install -e .
 ```
 
-Extra deps used only by the emissions / plot / totals scripts:
+Extra dependencies used only by the emissions / plot / totals scripts:
 `xarray`, `netCDF4`, `matplotlib`, `cartopy` — install these too if
 you use the corresponding tool.
 
@@ -37,19 +37,16 @@ On casper HPC at NCAR, just use `conda activate npl`.
 
 | Script                     | Purpose                                                               |
 |----------------------------|-----------------------------------------------------------------------|
-| `work_raster.py`           | Build the annual LCT + VCF GeoTIFFs from MODIS HDF tiles (regional)   |
-| `build_global_rasters.py`  | Same but global (streaming warp, bounded RAM); PBS job-array template |
-| `work_nrt.py`              | Original single-shot AF → polygons CLI shim                           |
-| `run_daily_nrt.py`         | Daily-driver for the AF → polygons pipeline (NRT)                     |
-| `work_archive.py`          | Same, for multi-day FIRMS archive files                               |
+| `build_global_rasters.py`  | Build the annual LCT + VCF GeoTIFFs from MODIS HDF tiles              |
+| `work_archive.py`          | For multi-day FIRMS archive files of Active Fires                     |
+| `run_daily_nrt.py`         | Daily-driver for the near-real-time AF → polygons pipeline            |
 
 ### Emissions calculation and gridding
 
 | Script                     | Input                                          | Output                                             |
 |----------------------------|------------------------------------------------|----------------------------------------------------|
-| `calc_emis_daily.py`       | polygons (`out_*.gpkg`) + fuel-load / EF CSVs  | Per-fire NetCDF, `(fire,)` dim                     |
+| `calc_emis_daily.py`       | polygons (`out_*.csv`) + fuel-load, EF (.csv)  | Per-fire NetCDF, `(fire,)` dim                     |
 | `grid_emissions.py`        | Per-fire NetCDF (from `calc_emis_daily.py`)    | Gridded NetCDF, `(time, lat, lon)` or `(time, ncol)` |
-| `txt_to_perfire_nc.py`     | Legacy FINN text CSV (hourly or daily)         | Per-fire NetCDF, `(polyid, hour)` or `(polyid,)`   |
 
 ### Analysis and visualization
 
@@ -59,35 +56,16 @@ On casper HPC at NCAR, just use `conda activate npl`.
 | `compute_emis_totals.py`    | Sum a gridded file over regions per timestep → CSV + line plot |
 | `plot_emissions_scrip.py`   | Polygon-fill map of an unstructured SCRIP-grid emissions file  |
 
-### Supporting data
-
-| File                              | Purpose                                              |
-|-----------------------------------|------------------------------------------------------|
-| `finn_text_species_mw.csv`        | Species → type (gas/aerosol/number) + MW lookup      |
-
 ## Usage by task
 
-### 1. Build the annual rasters (do for each year of fires)
+### 1. Build the annual rasters (do for each year prior to year of fires)
 
-Regional build:
-```bash
-finn-raster -y 2020 \
-    --lct      /data/MCD12Q1/2020/MCD12Q1.A2020001.*.hdf \
-    --vcf      /data/MOD44B/2020/MOD44B.A2020065.*.hdf \
-    --regions  /data/regions/All_Countries.shp \
-    --raster_dir ./rasters
-# produces:  ./rasters/modlct_2020.tif
-#            ./rasters/modvcf_2020.tif
-#            ./rasters/regnum.gpkg
-```
-
-Global multi-year build (streaming warp; peak RAM ~ `--warp-mem-mb`,
-default 2 GB):
+Build:
 ```bash
 python scripts/build_global_rasters.py \
     --lct-root /data/MCD12Q1 --vcf-root /data/MOD44B \
-    --regions  /data/regions/All_Countries.shp \
-    --raster-dir ./rasters --years 2002 2025
+    --regions  /data/regions/All_Countries.shp --region-column "Region_num" \
+    --raster-dir ./rasters --year 2002
 ```
 
 On NCAR Derecho, `build_global.pbs.template` fans this out as a 24-job
@@ -158,7 +136,9 @@ species, each shape `(fire,)`.  Gas species carry units `mol/day`,
 aerosols `kg/day`, number species `number/day`.  Every species variable
 gets a `molecular_weight_g_per_mol` attribute.
 
-### 4. Grid emissions onto lat-lon or SCRIP
+### Additional tools
+
+#### Grid emissions onto lat-lon or SCRIP
 
 For per-fire NetCDF (from `calc_emis_daily.py`):
 ```bash
@@ -174,35 +154,7 @@ python scripts/grid_emissions.py \
     --grid-label ne30pg3 --out-dir ./gridded_ne30pg3
 ```
 
-### 5. Convert legacy FINN text CSVs to per-fire NetCDF
-
-Some workflows need to keep the per-fire structure rather than grid
-onto a raster.  `txt_to_perfire_nc.py` writes one entry per unique
-POLYID.
-
-```bash
-# Hourly file (auto-detected from HOUR-column presence) → (polyid, hour)
-python scripts/txt_to_perfire_nc.py \
-    FINN_v2.7_hourly_2024033.txt \
-    --mw-table scripts/finn_text_species_mw.csv \
-    --out-dir ./perfire
-
-# Daily file (no HOUR column) → (polyid,)
-python scripts/txt_to_perfire_nc.py \
-    FINN_v2.7_daily_2024033.txt \
-    --out-dir ./perfire
-
-# Force daily even if HOUR present (sums across the 24 hours per fire)
-python scripts/txt_to_perfire_nc.py hourly_file.txt --daily --out-dir ./perfire
-```
-
-The **HOUR column's values are ignored** (unreliable in some FINN
-outputs) and the column is never written to output.  The actual UTC
-hour is derived from `datetimeUTC`.  The presence of the HOUR column
-is used only as a hint that the file is hourly.
-
-
-### 6. Compute regional totals and plot time series
+#### Compute regional totals and plot time series
 
 ```bash
 python scripts/compute_emis_totals.py \
@@ -225,13 +177,12 @@ auto-scaled to Mg/Gg/Tg based on magnitude) and
 For SCRIP-grid input pass `--scrip <scrip.nc>` so cell areas can be
 computed correctly.
 
-
-### 7. Map an unstructured (SCRIP) grid file
+#### Map an emissions file on unstructured grid
 
 ```bash
 python scripts/plot_emissions_scrip.py \
-    FINNv2.9.2_NRTmodvrs_MOZART_CO_mxc_20240301.nc \
-    /glade/.../scrip_mxc.nc \
+    FINNv2.9.2_NRTmodvrs_MOZART_CO_ne30_20240301.nc \
+    /glade/.../scrip_ne30.nc \
     --out-dir ./maps
 ```
 
@@ -262,23 +213,14 @@ finn_py/
 │   ├── raster_pipeline.py   run_raster(): mosaic local HDFs (no downloads)
 │   └── cli.py               argparse-driven entry points
 └── scripts/
-    ├── work_nrt.py                       drop-in CLI shim (single run)
-    ├── work_raster.py                    drop-in CLI shim
     ├── build_global_rasters.py           batch: build per-year global mosaics
-    ├── build_global.pbs.template         Derecho PBS 24-job array template
     ├── run_daily_nrt.py                  daily NRT driver
-    ├── run_daily_nrt.pbs.template        Derecho PBS template
     ├── work_archive.py                   multi-day-archive driver
-    ├── work_archive.pbs.template         Derecho PBS template
     ├── calc_emis_daily.py                IDL→Python emissions calc
     ├── grid_emissions.py                 per-fire NetCDF → gridded NetCDF
-    ├── grid_txt_emissions.py             legacy text CSV → gridded NetCDF
-    ├── txt_to_perfire_nc.py              legacy text CSV → per-fire NetCDF
-    ├── concat_finn_daily_hourly.py       prepend one daily day to hourly file
-    ├── append_daily_to_hourly.py         append one daily day to hourly file
     ├── compute_emis_totals.py            regional totals CSV + plot
     ├── plot_emissions_scrip.py           SCRIP polygon map
-    └── finn_text_species_mw.csv          species → type + MW lookup
+    └── preview_rasters.py                plot LCT & VCF GeoTIFFs
 ```
 
 ## Function-by-function map to the original (preprocessor)
