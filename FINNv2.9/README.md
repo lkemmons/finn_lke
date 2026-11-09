@@ -53,6 +53,7 @@ On casper HPC at NCAR, just use `conda activate npl`.
 | Script                      | What it does                                                   |
 |-----------------------------|----------------------------------------------------------------|
 | `preview_rasters.py`        | Map annual LCT and VCF GeoTIFF rasters                         |
+| `compare_finn_polygons.ipynb` | Compare fire polygons between 2 versions of FINN             |
 | `compute_emis_totals.py`    | Sum a gridded file over regions per timestep → CSV + line plot |
 | `plot_emissions_scrip.py`   | Polygon-fill map of an unstructured SCRIP-grid emissions file  |
 
@@ -221,6 +222,9 @@ finn_py/
     ├── compute_emis_totals.py            regional totals CSV + plot
     ├── plot_emissions_scrip.py           SCRIP polygon map
     └── preview_rasters.py                plot LCT & VCF GeoTIFFs
+└── notebooks/
+    ├── compare_finn_polygons.ipynb       compare processed fires
+
 ```
 
 ## Function-by-function map to the original (preprocessor)
