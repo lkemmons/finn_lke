@@ -1,0 +1,89 @@
+#!/bin/bash
+#PBS -N finnemis
+#PBS -A P19010000
+#PBS -l select=1:ncpus=1:mpiprocs=1:mem=32G
+#PBS -l walltime=2:00:00
+#PBS -q casper
+#PBS -j oe
+
+# /glade/work/emmons/FINN_python/FINNv2.9/run_emis/run_calc_emis_mv.pbs
+# Calculate v2.9.2 emissions and grid
+
+set -euo pipefail
+
+module load conda
+conda activate npl
+
+YEAR_AF=2012
+YEAR_RST=2011   #for file name
+DD1=1
+DD2=365
+
+# path for source code 
+FINN_PY_ROOT=/glade/work/emmons/FINN_python/FINNv2.9
+
+# labels
+FIRE_LAB=v2.9modvrs
+FINN_VER=v2.9.2
+SIM_ID=modvrs
+SPECIES_SET=MOZART-NEIVA
+
+# input paths
+FIRE_ROOT=/glade/campaign/acom/acom-weather/emmons/emissions_finn/finn2.9/processedfires/${YEAR_AF}
+
+# output paths
+EMIS_DIR=/glade/campaign/acom/acom-weather/emmons/emissions_finn/finn2.9/emis_nc_v2.9.2/${YEAR_AF}
+LOG_DIR=$EMIS_DIR/logs
+GRID_DIR=/glade/campaign/acom/acom-weather/emmons/emissions_finn/finn2.9/emis_grid_v2.9.2/${YEAR_AF}
+mkdir -p $EMIS_DIR
+mkdir -p $LOG_DIR
+mkdir -p $GRID_DIR
+
+export TMPDIR=/glade/derecho/scratch/emmons/tmp_finn
+mkdir -p $TMPDIR
+
+# save all output in a log file
+sd1=$(printf "%03d" $DD1)
+sd2=$(printf "%03d" $DD2)
+LOGFILE=${EMIS_DIR}/calcemis_${YEAR_AF}_${sd1}_${sd2}.log
+
+exec > ${LOGFILE} 2>&1
+
+for (( day_ind=DD1; day_ind<=DD2; day_ind++ )); do
+
+   DOY=$(printf "%03d" $day_ind)
+   YYYYJJJ=${YEAR_AF}${DOY}
+
+   # Convert DOY to MMDD. Use '10#' to force Bash to treat the number as base-10.
+   DAYS_TO_ADD=$(( 10#$DOY - 1 ))
+   date_emis=$(date -d "${YEAR_AF}-01-01 + ${DAYS_TO_ADD} days" +"%Y-%m-%d")
+   YYYYMMDD=$(date -d "$date_emis" +"%Y%m%d")
+
+   cd $FINN_PY_ROOT
+
+   # Calculate emissions with NEIVA EFs v2.9.2
+   python scripts/calc_emis_daily.py $YYYYJJJ $YEAR_RST \
+       --path-inputs /glade/work/emmons/finn_inputs \
+       --file-efs EFs_byGenVeg_NEIVA_MOZART_c20261022_FINNv2.9.2.csv \
+       --path-in $FIRE_ROOT \
+       --path-out $EMIS_DIR \
+       --tag-fire      $FIRE_LAB \
+       --finn-version  $FINN_VER \
+       --sim-id        $SIM_ID \
+       --file-label    $SPECIES_SET
+
+   # Grid emissions to 0.9x1.25
+   python scripts/grid_emissions.py $EMIS_DIR/FINN${FINN_VER}_${SIM_ID}_${SPECIES_SET}_${YYYYMMDD}.nc \
+       --out-dir ${GRID_DIR}/${YYYYMMDD} \
+       --grid-resolution 0.9 1.25
+
+   # Grid emissions to ne30
+   python scripts/grid_emissions.py $EMIS_DIR/FINN${FINN_VER}_${SIM_ID}_${SPECIES_SET}_${YYYYMMDD}.nc \
+       --out-dir ${GRID_DIR}/${YYYYMMDD} \
+       --scrip /glade/campaign/acom/MUSICA/grids/ne30pg3/ne30pg3_scrip_170611.nc \
+       --grid-label ne30pg3
+
+done
+
+exit 0
+

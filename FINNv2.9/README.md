@@ -69,9 +69,6 @@ python scripts/build_global_rasters.py \
     --raster-dir ./rasters --year 2002
 ```
 
-On NCAR Derecho, `build_global.pbs.template` fans this out as a 24-job
-array covering 2002–2025. (Not tested)
-
 Expected input layout:
 ```
 <lct-root>/2002/MCD12Q1.A2002001.*.hdf

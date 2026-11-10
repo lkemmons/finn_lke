@@ -1,0 +1,62 @@
+#!/bin/tcsh
+#PBS -N finn_raster
+#PBS -A P19010000
+#PBS -q casper
+#PBS -l select=1:ncpus=4:mpiprocs=4:mem=64GB
+#PBS -l walltime=01:00:00
+#PBS -j oe
+# -----------------------------------------------------------------------------
+# Build one year's global MODIS LCT + VCF mosaic.
+#
+# Submit with:    qsub build_annual_rasters.pbs
+# -----------------------------------------------------------------------------
+
+#set -euo pipefail
+
+# --- conda env that has rasterio, pyhdf, gdal, geopandas, etc. ---------------
+module load conda
+conda activate npl
+
+# --- paths (EDIT) ------------------------------------------------------------
+set FINN_PY_ROOT = "/glade/work/emmons/FINN_python/FINNv2.9"
+set LCT_ROOT = "/glade/derecho/scratch/emmons/finnpy_inputs/MCD12Q1"
+set VCF_ROOT = "/glade/derecho/scratch/emmons/finnpy_inputs/MOD44B"
+# do not need REGIONS if regnum.gpkg is in $RASTER_DIR
+#set REGIONS = "/glade/work/emmons/finn_inputs/All_Countries.shp"
+
+#set RASTER_DIR = "/glade/derecho/scratch/emmons/finnpy_inputs/finn_rasters_global"
+set RASTER_DIR = "/glade/campaign/acom/acom-weather/emmons/emissions_finn/finn2.9/veg_rasters"
+
+set YEAR = "2025"
+
+echo $FINN_PY_ROOT
+echo $LCT_ROOT $VCF_ROOT
+echo $YEAR
+
+# --- env knobs for big GDAL warps --------------------------------------------
+# Match GDAL_CACHEMAX (in MB) to your --mem and --ncpus.
+setenv GDAL_CACHEMAX 4096
+setenv GDAL_NUM_THREADS ALL_CPUS
+# Keep VRTs from blowing up disk in $TMPDIR if many tiles.
+setenv TMPDIR /glade/derecho/scratch/emmons/tmp
+mkdir -p $TMPDIR
+
+cd $FINN_PY_ROOT
+
+echo "=== year $YEAR  ==="
+echo "started: " `date`
+echo
+
+python scripts/build_global_rasters.py \
+    --year         $YEAR \
+    --lct-root     $LCT_ROOT \
+    --vcf-root     $VCF_ROOT \
+#    --regions      $REGIONS \
+#    --region-column "Region_num" \
+    --raster-dir   $RASTER_DIR  > rasters_$YEAR.log
+
+echo
+echo "=== finished: " `date`
+
+exit
+

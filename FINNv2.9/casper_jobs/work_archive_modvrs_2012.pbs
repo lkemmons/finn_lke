@@ -1,0 +1,104 @@
+#!/bin/bash
+#PBS -N finn_2012
+#PBS -A P19010000
+#PBS -l select=1:ncpus=4:mpiprocs=4:mem=32G
+#PBS -l walltime=12:00:00
+#PBS -q casper
+#PBS -j oe
+
+# -----------------------------------------------------------------------------
+# Process one day from multi-month finalized FIRMS archive files using
+# finn_py. 
+#
+# The whole archive file is loaded per-array-task; for a typical year of
+# global data that's well under a minute of overhead per job, which is
+# negligible vs the per-day step1/step2 work.
+# This time can be reduced if you get archive fires in smaller files
+# (e.g., 1 month per file).
+#
+# Submit:    qsub work_archive.pbs
+# -----------------------------------------------------------------------------
+
+set -euo pipefail
+
+module load conda
+conda activate npl
+
+YEAR_RST=2011
+YEAR_AF=2012
+DD1=1
+DD2=31
+
+# path for source code 
+FINN_PY_ROOT=/glade/work/emmons/FINN_python/FINNv2.9
+
+# labels
+FIRE_LAB=v2.9modvrs
+
+# paths for input
+RASTER_DIR=/glade/campaign/acom/acom-weather/emmons/emissions_finn/finn2.9/veg_rasters
+AF_ROOT=/glade/campaign/acom/acom-weather/emmons/emissions_finn/finn2.9/fire_detects
+
+# fire files to read
+AF_FILES=(
+    ${AF_ROOT}/fire_archive_M-C61_20111231_20121231.csv
+    ${AF_ROOT}/fire_archive_SV-C2_20120120_20121231.csv
+)
+
+# check if files exist
+for FILE in "${AF_FILES[@]}"; do
+    if [ ! -f "$FILE" ]; then
+        echo "Error: file '$FILE' is not found"
+        exit 1
+    fi
+done
+echo "All files exist. Continuing script..."
+
+# paths for output
+WORK_DIR=/glade/derecho/scratch/emmons/finn${FIRE_LAB}_${YEAR_AF}_work
+OUT_DIR=/glade/derecho/scratch/emmons/finn${FIRE_LAB}_${YEAR_AF}_output
+mkdir -p $WORK_DIR
+mkdir -p $OUT_DIR
+mkdir -p $OUT_DIR/logs
+
+# save all output in a log file
+sd1=$(printf "%03d" $DD1)
+sd2=$(printf "%03d" $DD2)
+LOGFILE=${OUT_DIR}/logs/finnpy_${YEAR_AF}_${sd1}_${sd2}.log
+
+exec > ${LOGFILE} 2>&1
+
+export TMPDIR=/glade/derecho/scratch/${USER}/tmp_finn
+mkdir -p $TMPDIR
+
+# include tropical fire points from previous day
+TROPICAL_CARRYOVER="--tropical-carryover"
+
+for (( day_ind=DD1; day_ind<=DD2; day_ind++ )); do
+
+   DOY=$(printf "%03d" $day_ind)
+   YYYYJJJ=${YEAR_AF}${DOY}
+
+   cd $FINN_PY_ROOT
+
+   echo "=== date $YYYYJJJ  ==="
+   echo "started: $(date -Iseconds)"
+   echo
+
+   python scripts/work_archive.py \
+	  --date         $YYYYJJJ \
+	  --tag-prefix   $FIRE_LAB \
+	  --af-files     "${AF_FILES[@]}" \
+	  --raster-dir   $RASTER_DIR \
+	  --year-rst     $YEAR_RST \
+	  --filter-persistent \
+	  $TROPICAL_CARRYOVER \
+	  --work-dir     $WORK_DIR \
+	  --out-dir      $OUT_DIR
+	  
+   echo
+   echo "=== finished: $(date -Iseconds) ==="
+
+done
+
+exit 0
