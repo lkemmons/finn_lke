@@ -1,0 +1,122 @@
+#!/bin/bash
+#PBS -N finnpy_nrt
+#PBS -A P19010000
+#PBS -l select=1:ncpus=1:mpiprocs=1:mem=32G
+#PBS -l walltime=1:00:00
+#PBS -q casper
+#PBS -j oe
+
+# modified version of script running daily on casper Nov 2026
+
+module load conda
+conda activate npl
+
+set -euo pipefail
+
+export TMPDIR=/glade/derecho/scratch/emmons/tmp_finn
+mkdir -p $TMPDIR
+
+# -- EDIT --
+# Paths for input:
+FINN_PY_ROOT=/glade/work/emmons/FINN_python/FINNv2.9nrt/finn_py
+AF_ROOT=/glade/derecho/scratch/emmons/finnpy_inputs/ActiveFires
+RASTER_DIR=/glade/derecho/scratch/emmons/finnpy_inputs/finn_rasters_global
+# Paths for output:
+WORK_DIR=/glade/derecho/scratch/emmons/finn2.9nrt_work
+OUT_DIR=/glade/derecho/scratch/emmons/finn2.9nrt_output
+LOG_DIR=${OUT_DIR}/logs
+
+# vegetation map year
+YEAR_RST=2024
+
+# include tropical fire points from previous day
+TROPICAL_CARRYOVER="--tropical-carryover"
+
+# run for yesterday and use 2 days ago to fill in Tropics
+offset1=-1
+offset2=-2
+
+date_to_process=`date +\%Y-\%m-\%d -d "+$offset1 days"`
+YYYYMMDD=`date +\%Y\%m\%d -d "+$offset1 days"`
+YYYYJJJ=$(date -d $date_to_process +'%Y%j')
+date_prev=`date +\%Y-\%m-\%d -d "+$offset2 days"`
+YYYYJJJm1=$(date -d $date_prev +'%Y%j')
+
+# save all output in a log file
+LOGFILE=${LOG_DIR}/finn_${YYYYJJJ}.log
+exec > ${LOGFILE} 2>&1
+
+echo "Processing data: $date_to_process $YYYYMMDD"
+echo "day of year: $YYYYJJJ"
+echo "previous day: $YYYYJJJm1"
+echo "Raster year: $YEAR_RST"
+
+# download fire counts for past 2 days from https://firms.modaps.eosdis.nasa.gov/download/
+#-------------------------------------------
+# Earthdata token expires every 2 months
+EARTHDATATOKEN= {user needs to get their own token}
+
+#MODIS (get 2 days for Tropical duplication)
+/usr/bin/wget -nv -e robots=off -m -np -R .html,.tmp -nH --cut-dirs=7 --no-check-certificate "https://nrt4.modaps.eosdis.nasa.gov/api/v2/content/archives/FIRMS/modis-c6.1/Global/MODIS_C6_1_Global_MCD14DL_NRT_${YYYYJJJ}.txt" --header "Authorization: Bearer ${EARTHDATATOKEN}" -P $AF_ROOT -a ${LOGFILE} ||true
+/usr/bin/wget -nv -e robots=off -m -np -R .html,.tmp -nH --cut-dirs=7 --no-check-certificate "https://nrt4.modaps.eosdis.nasa.gov/api/v2/content/archives/FIRMS/modis-c6.1/Global/MODIS_C6_1_Global_MCD14DL_NRT_${YYYYJJJm1}.txt" --header "Authorization: Bearer ${EARTHDATATOKEN}" -P $AF_ROOT -a ${LOGFILE} ||true
+
+#VIIRS-NPP/SUOMI
+/usr/bin/wget -nv -e robots=off -m -np -R .html,.tmp -nH --cut-dirs=7 --no-check-certificate "https://nrt3.modaps.eosdis.nasa.gov/api/v2/content/archives/FIRMS/suomi-npp-viirs-c2/Global/SUOMI_VIIRS_C2_Global_VNP14IMGTDL_NRT_${YYYYJJJ}.txt" --header "Authorization: Bearer ${EARTHDATATOKEN}" -P $AF_ROOT -a ${LOGFILE} ||true
+
+cd $FINN_PY_ROOT
+
+echo "=== date $YYYYJJJ  ==="
+echo "started FINN_PY: $(date -Iseconds)"
+echo
+
+python scripts/run_daily_nrt.py \
+       --date         $YYYYJJJ \
+       --tag-prefix   "v2.9nrt" \
+       --af-root      $AF_ROOT \
+       --raster-dir   $RASTER_DIR \
+       --year-rst     $YEAR_RST \
+       $TROPICAL_CARRYOVER \
+       --work-dir     $WORK_DIR \
+       --out-dir      $OUT_DIR
+
+echo
+echo "=== finished preprocessor: $(date -Iseconds) ==="
+
+echo "=== calculate v2.9.2 emissions $(date -Iseconds) ==="
+
+cd /glade/work/emmons/FINN_python/FINNv2.9nrt/emis_calc
+
+python calc_emis_daily.py $YYYYJJJ $YEAR_RST \
+       --path-inputs /glade/work/emmons/finn_inputs \
+       --file-efs EFs_byGenVeg_NEIVA_MOZART_c20261022_FINNv2.9.2.csv \
+       --path-in /glade/derecho/scratch/emmons/finn2.9nrt_output \
+       --path-out /glade/derecho/scratch/emmons/finn2.9.2nrt_emis_py_nc
+
+# write old format txt files from emissions per-fire netcdf files
+#  need to specify which species are aerosols so are written in kg/day instead of moles/day
+python finn_nc_to_txt.py \
+	 /glade/derecho/scratch/emmons/finn2.9.2nrt_emis_py_nc/FINNv2.9.2_NRTmodvrs_MOZART-NEIVA_${YYYYMMDD}.nc \
+	 -o /glade/campaign/acom/acom-weather/emmons/emissions_finn/finn2.9nrt/emis_txt_v2.9.2/FINNv2.9.2_NRTmodvrs_MOZART-NEIVA_nc_${YYYYMMDD}.txt \
+	 --aerosols BC OC PM2.5 PM10
+
+# gridding could be performed here; currently done in other scripts
+#python grid_emissions.py /glade/derecho/scratch/emmons/finn2.9.2nrt_emis_py_nc/FINNv2.9.2_NRTmodvrs_MOZART-NEIVA_${YYYYMMDD}.nc \
+#       --out-dir /glade/derecho/scratch/emmons/finn2.9.2nrt_emis_py_grid01x01/${YYYYMMDD} \
+#       --grid-resolution 0.1 0.1
+
+
+echo "=== save files to campaign ==="
+cp /glade/derecho/scratch/emmons/finn2.9nrt_output/out*${YYYYJJJ}*.csv /glade/campaign/acom/acom-weather/emmons/emissions_finn/finn2.9nrt/processedfires/
+cp /glade/derecho/scratch/emmons/finn2.9.2nrt_emis_py_nc/FINNv2.9.2_NRTmodvrs_MOZART-NEIVA_${YYYYMMDD}.nc /glade/campaign/acom/acom-weather/emmons/emissions_finn/finn2.9nrt/emis_nc_v2.9.2/
+#mkdir -p /glade/campaign/acom/acom-weather/emmons/emissions_finn/finn2.9nrt/emis_grid_v2.9.2/${YYYYMMDD}/
+#cp /glade/derecho/scratch/emmons/finn2.9.2nrt_emis_py_grid01x01/${YYYYMMDD}/* /glade/campaign/acom/acom-weather/emmons/emissions_finn/finn2.9nrt/emis_grid_v2.9.2/${YYYYMMDD}/
+
+# make sure everyone can read files
+chmod -R +r /glade/campaign/acom/acom-weather/emmons/emissions_finn/finn2.9nrt/*
+#chmod -R +x $pathgrid/*
+#chmod -R +x /glade/campaign/acom/acom-weather/emmons/emissions_finn/finn2.9nrt/emis_grid_v2.9.2/*
+
+echo "=== FINN2.9nrt completed $(date -Iseconds) ==="
+
+exit 0
+
